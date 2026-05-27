@@ -11,6 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import WebSocket from "ws";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,7 +33,18 @@ if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
   console.warn("If bucket creation fails, add SUPABASE_SERVICE_ROLE_KEY to your backend .env.");
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  },
+  global: {
+    fetch: (url, options) => fetch(url, options),
+  },
+  realtime: {
+    transport: WebSocket,
+  }
+});
 
 try {
   console.log(`Checking Supabase Storage bucket '${BUCKET}'...`);
