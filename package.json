@@ -1,0 +1,49 @@
+{
+  "name": "@workspace/api-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development nodemon --watch src -e ts,json --exec \"pnpm run build && pnpm run start\"",
+    "start": "node --enable-source-maps ./dist/index.mjs",
+    "setup-storage": "node ./scripts/setup-storage.mjs",
+    "preinstall": "node -e \"['package-lock.json','yarn.lock'].forEach(f=>{try{require('fs').unlinkSync(f)}catch{}})\"",
+    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "db:push": "pnpm --filter @workspace/db run push",
+    "db:push-force": "pnpm --filter @workspace/db run push-force",
+    "db:generate": "pnpm --filter @workspace/db run generate",
+    "db:migrate": "pnpm --filter @workspace/db run migrate",
+    "db:check": "pnpm --filter @workspace/db run check",
+    "db:check-connection": "pnpm --filter @workspace/db run check:connection",
+    "db:studio": "pnpm --filter @workspace/db run studio",
+    "typecheck:libs": "tsc --build",
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.3",
+    "@workspace/api-zod": "workspace:*",
+    "@workspace/db": "workspace:*",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "catalog:",
+    "express": "^5",
+    "groq-sdk": "^0.5.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "nodemon": "^3.1.14",
+    "pino": "^9",
+    "pino-http": "^10"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^1.4.12",
+    "@types/node": "catalog:",
+    "esbuild": "^0.27.3",
+    "esbuild-plugin-pino": "^2.3.3",
+    "pino-pretty": "^13",
+    "thread-stream": "3.1.0"
+  }
+}

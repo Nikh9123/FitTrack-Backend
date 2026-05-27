@@ -1,0 +1,22 @@
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "slug" text;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "aliases" text[];
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "body_part" text;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "target_muscle" text;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "secondary_muscles" text[];
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "mechanics" text;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "force_type" text;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "tips" text[];
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "use_cases" jsonb;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "contraindications" text[];
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "gif_url" text;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "image_url" text;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "video_url" text;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "youtube_url" text;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "source" text;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "source_exercise_id" text;
+ALTER TABLE "exercises" ADD COLUMN IF NOT EXISTS "updated_at" timestamp with time zone DEFAULT now() NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS "exercises_slug_idx" ON "exercises" ("slug");
+CREATE INDEX IF NOT EXISTS "exercises_body_part_idx" ON "exercises" ("body_part");
+CREATE INDEX IF NOT EXISTS "exercises_target_muscle_idx" ON "exercises" ("target_muscle");
+CREATE UNIQUE INDEX IF NOT EXISTS "exercises_source_exercise_idx" ON "exercises" ("source", "source_exercise_id");
