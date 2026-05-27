@@ -6,7 +6,7 @@
  */
 
 import type { Response } from "express";
-import { db, weightLogs, inbodyReports, userStreaks, userAchievements, achievementDefinitions, dailyCheckins, activitySummaries } from "@workspace/db";
+import { db, weightLogs, inbodyReports, userStreaks, userAchievements, achievementDefinitions, dailyCheckins, activitySummaries } from "../db";
 import { eq, desc, gte, and, lte } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import type { AuthenticatedRequest } from "../lib/auth";

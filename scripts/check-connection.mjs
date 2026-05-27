@@ -10,7 +10,7 @@ const databaseUrl = getDatabaseUrl();
 
 if (!databaseUrl) {
   throw new Error(
-    "DATABASE_URL is not set. Add your Supabase Postgres URL to lib/db/.env or .env.",
+    "DATABASE_URL is not set. Add your Supabase Postgres URL to .env.",
   );
 }
 
@@ -39,15 +39,10 @@ function getDatabaseUrl() {
     return process.env.DATABASE_URL;
   }
 
-  for (const path of [resolve(configDir, ".env"), resolve(configDir, "../../.env")]) {
-    if (!existsSync(path)) {
-      continue;
-    }
-
-    const value = readDatabaseUrl(path);
-    if (value) {
-      return value;
-    }
+  const envPath = resolve(configDir, ".env");
+  if (existsSync(envPath)) {
+    const value = readDatabaseUrl(envPath);
+    if (value) return value;
   }
 
   return undefined;

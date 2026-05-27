@@ -5,7 +5,7 @@
  */
 
 import type { Request, Response } from "express";
-import { db, inbodyReports } from "@workspace/db";
+import { db, inbodyReports } from "../db";
 import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { uploadToStorage, runOCR } from "../lib/inbody-ocr";
@@ -205,7 +205,7 @@ export async function analyzeInbodyReport(req: AuthenticatedRequest, res: Respon
   const [report] = await db
     .select()
     .from(inbodyReports)
-    .where(eq(inbodyReports.id, reportId))
+    .where(eq(inbodyReports.id, String(reportId)))
     .limit(1);
 
   if (!report) {
@@ -269,7 +269,7 @@ export async function getInbodyReport(req: AuthenticatedRequest, res: Response) 
   const [report] = await db
     .select()
     .from(inbodyReports)
-    .where(eq(inbodyReports.id, id))
+    .where(eq(inbodyReports.id, String(id)))
     .limit(1);
 
   if (!report) {

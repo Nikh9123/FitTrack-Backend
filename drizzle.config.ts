@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "drizzle-kit";
 
 const configDir = dirname(fileURLToPath(import.meta.url));
-const envFiles = [resolve(configDir, ".env"), resolve(configDir, "../../.env")];
+const envFiles = [resolve(configDir, ".env")];
 let databaseUrl = process.env.DATABASE_URL;
 
 for (const path of envFiles) {
@@ -19,14 +19,14 @@ for (const path of envFiles) {
 
 if (!databaseUrl) {
   throw new Error(
-    "DATABASE_URL is not set. Add your Supabase Postgres URL to .env or lib/db/.env.",
+    "DATABASE_URL is not set. Add your Supabase Postgres URL to .env.",
   );
 }
 
 databaseUrl = withSupabaseSslMode(databaseUrl);
 
 export default defineConfig({
-  schema: "./src/schema/index.ts",
+  schema: "./src/db/schema/index.ts",
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {

@@ -2,9 +2,9 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { NextFunction, Request, Response } from "express";
 import { createClient } from "@supabase/supabase-js";
-import { db, userProfiles, users } from "@workspace/db";
+import { db, userProfiles, users } from "../db";
 import { eq } from "drizzle-orm";
-import type { User, UserProfile } from "@workspace/db";
+import type { User, UserProfile } from "../db";
 import { logger } from "./logger";
 
 export { logger };
@@ -196,7 +196,8 @@ export async function updateUserProfile(userId: string, payload: {
   // Optionally store preferences in profile (if column exists)
   if (payload.preferences !== undefined) {
     try {
-      await db.update(userProfiles).set({ preferences: JSON.stringify(payload.preferences) as any }).where(eq(userProfiles.userId, userId));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (db.update(userProfiles) as any).set({ preferences: JSON.stringify(payload.preferences) }).where(eq(userProfiles.userId, userId));
     } catch (e) {
       // ignore if preferences column doesn't exist
     }
@@ -281,7 +282,7 @@ export async function createUserWithProfile(options: {
         }
         if (options.username) {
           const row = await getUserRowByUsername(options.username.trim().toLowerCase());
-          if (row) return row.user;z
+          if (row) return row.user;
         }
       } catch (e) {
         // ignore and fall through to rethrow below

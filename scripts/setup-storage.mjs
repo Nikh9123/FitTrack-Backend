@@ -14,9 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
-dotenv.config({ path: path.resolve(scriptDir, "../../../.env") });
 dotenv.config({ path: path.resolve(scriptDir, "../.env") });
-dotenv.config({ path: path.resolve(scriptDir, "../../../lib/db/.env") });
 
 const BUCKET = "inbody-reports";
 const SUPABASE_URL = process.env.SUPABASE_URL;

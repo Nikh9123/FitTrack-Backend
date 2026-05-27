@@ -1,0 +1,54 @@
+# 1. Dependencies Stage: Install all workspace dependencies
+FROM node:20-alpine AS dependencies
+WORKDIR /app
+
+# Copy dependency-related files
+COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY package.json ./
+COPY lib/db/package.json ./lib/db/
+COPY lib/api-client-react/package.json ./lib/api-client-react/
+COPY artifacts/api-server/package.json ./artifacts/api-server/
+COPY artifacts/mobile/package.json ./artifacts/mobile/
+COPY artifacts/mockup-sandbox/package.json ./artifacts/mockup-sandbox/
+
+# Install all dependencies
+RUN npm i -g pnpm
+RUN pnpm install --frozen-lockfile
+
+# 2. Builder Stage: Build the api-server
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Copy source code
+COPY . .
+
+# Copy node_modules from the dependencies stage
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --from=dependencies /app/lib/db/node_modules ./lib/db/node_modules
+COPY --from=dependencies /app/artifacts/api-server/node_modules ./artifacts/api-server/node_modules
+
+# Build the api-server
+RUN npm i -g pnpm
+RUN pnpm --filter @workspace/api-server run build
+
+# 3. Final Stage: Create the production image
+FROM node:20-alpine AS final
+WORKDIR /app
+
+# Set production environment
+ENV NODE_ENV=production
+
+# Copy production node_modules
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --from=dependencies /app/lib/db/node_modules ./lib/db/node_modules
+COPY --from=dependencies /app/artifacts/api-server/node_modules ./artifacts/api-server/node_modules
+
+# Copy the built output from the builder stage
+COPY --from=builder /app/artifacts/api-server/dist ./dist
+COPY --from=builder /app/artifacts/api-server/package.json ./package.json
+
+# Expose the port the app runs on
+EXPOSE 5000
+
+# The command to run the application
+CMD ["node", "--enable-source-maps", "./dist/index.mjs"]

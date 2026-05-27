@@ -232,7 +232,7 @@ router.post("/auth/google/callback", async (req, res) => {
   } else {
     // Update avatar from Google if not set
     if (!row.profile?.avatarUrl && supaUser.user_metadata?.avatar_url) {
-      const { db, userProfiles } = await import("@workspace/db");
+      const { db, userProfiles } = await import("../db");
       const { eq } = await import("drizzle-orm");
       await db
         .update(userProfiles)

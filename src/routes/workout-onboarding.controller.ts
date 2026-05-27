@@ -6,7 +6,7 @@
  */
 
 import type { Response } from "express";
-import { db, inbodyReports, userProfiles } from "@workspace/db";
+import { db, inbodyReports, userProfiles } from "../db";
 import { eq, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import Groq from "groq-sdk";

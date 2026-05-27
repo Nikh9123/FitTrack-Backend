@@ -2,12 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
 
-const apiDir = process.cwd();
-const rootEnvPath = path.resolve(apiDir, "../../.env");
-const apiEnvPath = path.resolve(apiDir, ".env");
+const rootEnvPath = path.resolve(process.cwd(), ".env");
 
-loadEnvFile(rootEnvPath, false);
-loadEnvFile(apiEnvPath, true);
+loadEnvFile(rootEnvPath, true);
 
 function loadEnvFile(filePath: string, overrideLoadedValues: boolean) {
   if (!existsSync(filePath)) {
