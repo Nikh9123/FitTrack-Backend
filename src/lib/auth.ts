@@ -6,6 +6,7 @@ import { db, userProfiles, users } from "../db";
 import { eq } from "drizzle-orm";
 import type { User, UserProfile } from "../db";
 import { logger } from "./logger";
+import { WebSocket } from "ws";
 
 export { logger };
 
@@ -44,8 +45,30 @@ if ((!SUPABASE_URL || !SUPABASE_ANON_KEY) && process.env.NODE_ENV === "productio
 // Use placeholder URLs in dev if not configured — Supabase operations will
 // fail gracefully at runtime, but the server will start.
 export const supabase = SUPABASE_URL
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : createClient("https://placeholder.supabase.co", "placeholder-anon-key");
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    },
+    global: {
+      fetch: (url, options) => fetch(url, options),
+    },
+    realtime: {
+      transport: WebSocket,
+    }
+  })
+  : createClient("https://placeholder.supabase.co", "placeholder-anon-key", {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    },
+    global: {
+      fetch: (url, options) => fetch(url, options),
+    },
+    realtime: {
+      transport: WebSocket,
+    }
+  });
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 export function createJwtToken(user: User, onboardingCompleted: boolean) {
