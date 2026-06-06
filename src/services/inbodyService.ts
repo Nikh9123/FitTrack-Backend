@@ -5,8 +5,10 @@
  * All database queries and Supabase Storage interactions live here.
  */
 
-import { db, inbodyReports } from "../db";
+import { db, inbodyReports, measurementLogs, userProfiles } from "../db";
 import { eq, and, desc } from "drizzle-orm";
+import { estimateBodyComposition } from "../lib/body-estimation";
+import { lbToKg, feetInchesToCm } from "../lib/unit-convert";
 import { createClient } from "@supabase/supabase-js";
 import { logger } from "../lib/logger";
 import { uploadToStorage, runOCR } from "../lib/inbody-ocr";
@@ -190,6 +192,119 @@ export async function createReport(
   };
 }
 
+export interface EstimateMeasurementsInput {
+  weightKg?: number;
+  weightLb?: number;
+  heightCm?: number;
+  heightFeet?: number;
+  heightInches?: number;
+  waistCm: number;
+  chestCm: number;
+}
+
+/** Create an estimated InBody report from body measurements. */
+export async function createEstimatedReport(
+  userId: string,
+  input: EstimateMeasurementsInput,
+): Promise<{
+  reportId: string;
+  extractedMetrics: Record<string, string>;
+  geminiAnalysis: GeminiAnalysis | null;
+}> {
+  let weightKg = input.weightKg;
+  if (weightKg == null && input.weightLb != null) {
+    weightKg = lbToKg(input.weightLb);
+  }
+
+  let heightCm = input.heightCm;
+  if (heightCm == null && input.heightFeet != null) {
+    heightCm = feetInchesToCm(input.heightFeet, input.heightInches ?? 0);
+  }
+
+  if (!weightKg || weightKg <= 0 || !heightCm || heightCm <= 0) {
+    throw { code: "INVALID_INPUT", message: "Valid weight and height are required" };
+  }
+  if (!input.waistCm || input.waistCm <= 0) {
+    throw { code: "INVALID_INPUT", message: "Waist measurement is required" };
+  }
+
+  const [profile] = await db
+    .select({
+      gender: userProfiles.gender,
+      dateOfBirth: userProfiles.dateOfBirth,
+      heightCm: userProfiles.heightCm,
+    })
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId))
+    .limit(1);
+
+  const genderRaw = (profile?.gender ?? "male").toLowerCase();
+  const gender: "male" | "female" = genderRaw.startsWith("f") ? "female" : "male";
+
+  let age = 30;
+  if (profile?.dateOfBirth) {
+    const dob = new Date(profile.dateOfBirth);
+    const now = new Date();
+    age = now.getFullYear() - dob.getFullYear();
+  }
+
+  const metrics = estimateBodyComposition({
+    weightKg,
+    heightCm,
+    waistCm: input.waistCm,
+    chestCm: input.chestCm ?? 0,
+    age,
+    gender,
+  });
+
+  const extractedMetrics: Record<string, string> = {
+    ...metrics,
+    estimated: "true",
+  };
+
+  let geminiAnalysis: GeminiAnalysis | null = null;
+  try {
+    geminiAnalysis = await analyzeWithGemini(extractedMetrics, {
+      age,
+      gender,
+      height: metrics.height,
+    });
+    if (geminiAnalysis && typeof geminiAnalysis === "object") {
+      (geminiAnalysis as unknown as Record<string, unknown>).estimated = true;
+    }
+  } catch (err: any) {
+    logger.warn({ err: err.message, userId }, "AI narrative for estimated report failed");
+  }
+
+  const [row] = await db
+    .insert(inbodyReports)
+    .values({
+      userId,
+      reportUrl: null,
+      fileType: "estimated",
+      fileName: "body-measurements",
+      extractedMetrics,
+      geminiAnalysis: geminiAnalysis ?? undefined,
+      sourceType: "estimated",
+      status: "done",
+      extractedText: "Estimated from body measurements (not clinically accurate).",
+    })
+    .returning({ id: inbodyReports.id });
+
+  await db.insert(measurementLogs).values({
+    userId,
+    recordedAt: new Date(),
+    waistCm: String(input.waistCm),
+    chestCm: input.chestCm ? String(input.chestCm) : null,
+  });
+
+  return {
+    reportId: row.id,
+    extractedMetrics,
+    geminiAnalysis,
+  };
+}
+
 /** Re-run AI analysis on an already-uploaded report. */
 export async function reanalyzeReport(
   reportId: string,
@@ -220,6 +335,7 @@ export async function listReports(userId: string) {
       status: inbodyReports.status,
       extractedMetrics: inbodyReports.extractedMetrics,
       geminiAnalysis: inbodyReports.geminiAnalysis,
+      sourceType: inbodyReports.sourceType,
       createdAt: inbodyReports.createdAt,
     })
     .from(inbodyReports)

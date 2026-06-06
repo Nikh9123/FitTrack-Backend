@@ -18,7 +18,10 @@ export const inbodyReports = pgTable("inbody_reports", {
     .references(() => users.id, { onDelete: "cascade" }),
 
   /** Public URL of the uploaded file (image / PDF) stored in Supabase Storage */
-  reportUrl: text("report_url").notNull(),
+  reportUrl: text("report_url"),
+
+  /** upload = scanned report, estimated = body measurement wizard */
+  sourceType: text("source_type").notNull().default("upload"),
 
   /** MIME type: "image/jpeg", "image/png", "application/pdf", etc. */
   fileType: text("file_type").notNull().default("image/jpeg"),

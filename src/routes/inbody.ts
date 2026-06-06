@@ -14,6 +14,7 @@ import multer from "multer";
 import { requireAuth } from "../lib/auth";
 import {
   uploadInbodyReport,
+  estimateFromMeasurements,
   analyzeInbodyReport,
   listInbodyReports,
   getInbodyReport,
@@ -50,6 +51,8 @@ router.post(
   upload.single("report"),
   uploadInbodyReport,
 );
+
+router.post("/inbody/estimate-from-measurements", requireAuth, estimateFromMeasurements);
 
 router.post("/inbody/analyze/:reportId", requireAuth, analyzeInbodyReport);
 

@@ -1,7 +1,35 @@
-import { and, eq, gte, lte, ne, or, isNull, sql } from "drizzle-orm";
-import { db, activitySummaries, dailyCheckins, dietLogs, waterLogs, weightLogs } from "../db";
+import { and, asc, desc, eq, gte, lte, ne, or, isNull, sql } from "drizzle-orm";
+import {
+  db,
+  activitySummaries,
+  dailyCheckins,
+  dietLogs,
+  inbodyReports,
+  userProfiles,
+  userWorkoutSessions,
+  waterLogs,
+  weightLogs,
+} from "../db";
+import { calcBmrMifflin } from "../lib/body-estimation";
 
 export type HistoryPeriod = "7d" | "30d" | "90d" | "1y";
+export type WeightChangePeriod = "1d" | "1w" | "1m" | "all";
+export type WeightChangeSource = "scale" | "inbody";
+
+export interface WeightChangeResult {
+  deltaKg: number;
+  direction: "lost" | "gained" | "unchanged";
+  startKg: number;
+  endKg: number;
+  hasData: boolean;
+  isEstimated?: boolean;
+  disclaimer?: string | null;
+  anchorDate?: string | null;
+}
+
+const KCAL_PER_KG_FAT = 7700;
+const ESTIMATED_WEIGHT_DISCLAIMER =
+  "Estimated from your food and activity. Scale weight may take 2–3 weeks to catch up.";
 
 export interface HistoryDayBucket {
   date: string;
@@ -300,4 +328,430 @@ export async function getHistoryInsights(userId: string, period: HistoryPeriod =
   }
 
   return insights;
+}
+
+function parseWeightKg(raw: string | number | null | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = parseFloat(String(raw).replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+function weightChangeBounds(period: WeightChangePeriod): { start: Date | null; end: Date } {
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+
+  if (period === "all") {
+    return { start: null, end };
+  }
+
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+
+  if (period === "1d") {
+    start.setDate(start.getDate() - 1);
+    return { start, end };
+  }
+  if (period === "1w") {
+    start.setDate(start.getDate() - 6);
+    return { start, end };
+  }
+  // 1m
+  start.setDate(start.getDate() - 29);
+  return { start, end };
+}
+
+function buildWeightChangeResult(
+  startKg: number,
+  endKg: number,
+  opts?: Pick<WeightChangeResult, "isEstimated" | "disclaimer" | "anchorDate">,
+): WeightChangeResult {
+  const deltaKg = Math.round((endKg - startKg) * 10) / 10;
+  let direction: WeightChangeResult["direction"] = "unchanged";
+  if (Math.abs(deltaKg) >= 0.1) {
+    direction = deltaKg < 0 ? "lost" : "gained";
+  }
+  return {
+    deltaKg,
+    direction,
+    startKg: Math.round(startKg * 10) / 10,
+    endKg: Math.round(endKg * 10) / 10,
+    hasData: true,
+    isEstimated: opts?.isEstimated ?? false,
+    disclaimer: opts?.disclaimer ?? null,
+    anchorDate: opts?.anchorDate ?? null,
+  };
+}
+
+function ageFromDateOfBirth(dob: string | null | undefined): number {
+  if (!dob) return 30;
+  const born = new Date(dob);
+  if (Number.isNaN(born.getTime())) return 30;
+  const today = new Date();
+  let age = today.getFullYear() - born.getFullYear();
+  const monthDelta = today.getMonth() - born.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < born.getDate())) {
+    age -= 1;
+  }
+  return Math.max(16, Math.min(90, age));
+}
+
+function normalizeGender(raw: string | null | undefined): "male" | "female" {
+  const g = String(raw ?? "").toLowerCase();
+  if (g.startsWith("f")) return "female";
+  return "male";
+}
+
+function dayKeysBetween(start: Date, end: Date): string[] {
+  const keys: string[] = [];
+  const cursor = new Date(start);
+  cursor.setHours(12, 0, 0, 0);
+  const endMs = new Date(end).setHours(23, 59, 59, 999);
+  while (cursor.getTime() <= endMs) {
+    keys.push(toLocalDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return keys;
+}
+
+function nextDayKey(dateKey: string): string {
+  const d = new Date(`${dateKey}T12:00:00`);
+  d.setDate(d.getDate() + 1);
+  return toLocalDateKey(d);
+}
+
+function dateKeyToDate(dateKey: string): Date {
+  const d = new Date(`${dateKey}T12:00:00`);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+async function resolveUserBmr(userId: string, fallbackWeightKg: number): Promise<number> {
+  const [profile] = await db
+    .select({
+      heightCm: userProfiles.heightCm,
+      weightKg: userProfiles.weightKg,
+      gender: userProfiles.gender,
+      dateOfBirth: userProfiles.dateOfBirth,
+    })
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId))
+    .limit(1);
+
+  const weightKg = parseWeightKg(profile?.weightKg) ?? fallbackWeightKg;
+  const heightCm = parseWeightKg(profile?.heightCm) ?? 170;
+  const age = ageFromDateOfBirth(profile?.dateOfBirth ?? null);
+  const gender = normalizeGender(profile?.gender);
+
+  if (!Number.isFinite(weightKg) || weightKg <= 0) return 2000;
+  return Math.round(calcBmrMifflin(weightKg, heightCm, age, gender));
+}
+
+async function getLatestWeightAnchor(
+  userId: string,
+  before: Date,
+): Promise<{ anchorKg: number; anchorDate: string } | null> {
+  const [row] = await db
+    .select({ recordedAt: weightLogs.recordedAt, weightKg: weightLogs.weightKg })
+    .from(weightLogs)
+    .where(
+      and(
+        eq(weightLogs.userId, userId),
+        lte(weightLogs.recordedAt, before),
+        or(isNull(weightLogs.notes), ne(weightLogs.notes, "fittrack_demo_seed")),
+      ),
+    )
+    .orderBy(desc(weightLogs.recordedAt))
+    .limit(1);
+
+  const anchorKg = parseWeightKg(row?.weightKg);
+  if (row == null || anchorKg == null) return null;
+  return { anchorKg, anchorDate: toLocalDateKey(new Date(row.recordedAt)) };
+}
+
+async function getEstimatedScaleWeightChange(
+  userId: string,
+  period: WeightChangePeriod,
+): Promise<WeightChangeResult> {
+  const { start, end } = weightChangeBounds(period);
+  const anchor = await getLatestWeightAnchor(userId, end);
+  if (!anchor) {
+    return { deltaKg: 0, direction: "unchanged", startKg: 0, endKg: 0, hasData: false };
+  }
+
+  const firstDeficitDay = nextDayKey(anchor.anchorDate);
+  const dataStart = dateKeyToDate(firstDeficitDay);
+  const periodStart = start ?? dateKeyToDate(anchor.anchorDate);
+  if (dataStart.getTime() > end.getTime()) {
+    return { deltaKg: 0, direction: "unchanged", startKg: 0, endKg: 0, hasData: false };
+  }
+
+  const periodDayKeys = dayKeysBetween(periodStart > dataStart ? periodStart : dataStart, end);
+  const allDayKeys = dayKeysBetween(dataStart, end);
+  if (periodDayKeys.length === 0) {
+    return { deltaKg: 0, direction: "unchanged", startKg: 0, endKg: 0, hasData: false };
+  }
+
+  const rangeEndKey = toLocalDateKey(end);
+
+  const [activityRows, dietRows, workoutRows, dailyBmr] = await Promise.all([
+    db
+      .select({
+        summaryDate: activitySummaries.summaryDate,
+        caloriesBurned: activitySummaries.caloriesBurned,
+        steps: activitySummaries.steps,
+      })
+      .from(activitySummaries)
+      .where(
+        and(
+          eq(activitySummaries.userId, userId),
+          gte(activitySummaries.summaryDate, dataStart),
+          lte(activitySummaries.summaryDate, end),
+        ),
+      ),
+    db
+      .select({
+        logDate: dietLogs.logDate,
+        caloriesKcal: dietLogs.caloriesKcal,
+      })
+      .from(dietLogs)
+      .where(
+        and(eq(dietLogs.userId, userId), gte(dietLogs.logDate, dataStart), lte(dietLogs.logDate, end)),
+      ),
+    db
+      .select({
+        startedAt: userWorkoutSessions.startedAt,
+        completedAt: userWorkoutSessions.completedAt,
+        caloriesBurned: userWorkoutSessions.caloriesBurned,
+      })
+      .from(userWorkoutSessions)
+      .where(
+        and(
+          eq(userWorkoutSessions.userId, userId),
+          or(
+            and(gte(userWorkoutSessions.completedAt, dataStart), lte(userWorkoutSessions.completedAt, end)),
+            and(
+              isNull(userWorkoutSessions.completedAt),
+              gte(userWorkoutSessions.startedAt, dataStart),
+              lte(userWorkoutSessions.startedAt, end),
+            ),
+          ),
+        ),
+      ),
+    resolveUserBmr(userId, anchor.anchorKg),
+  ]);
+
+  const consumedByDay = new Map<string, number>();
+  const burnedByDay = new Map<string, number>();
+
+  for (const key of allDayKeys) {
+    consumedByDay.set(key, 0);
+    burnedByDay.set(key, dailyBmr);
+  }
+
+  for (const row of dietRows) {
+    const key = toLocalDateKey(new Date(row.logDate));
+    if (!consumedByDay.has(key)) continue;
+    consumedByDay.set(key, (consumedByDay.get(key) ?? 0) + parseFloat(String(row.caloriesKcal ?? 0)));
+  }
+
+  for (const row of activityRows) {
+    const key = toLocalDateKey(new Date(row.summaryDate));
+    if (!burnedByDay.has(key)) continue;
+    burnedByDay.set(key, (burnedByDay.get(key) ?? dailyBmr) + (row.caloriesBurned ?? 0));
+  }
+
+  for (const row of workoutRows) {
+    const when = row.completedAt ?? row.startedAt;
+    const key = toLocalDateKey(new Date(when));
+    if (!burnedByDay.has(key)) continue;
+    burnedByDay.set(key, (burnedByDay.get(key) ?? dailyBmr) + (row.caloriesBurned ?? 0));
+  }
+
+  let trackedDays = 0;
+  for (const key of periodDayKeys) {
+    const consumed = consumedByDay.get(key) ?? 0;
+    const activityExtra = (burnedByDay.get(key) ?? dailyBmr) - dailyBmr;
+    if (consumed > 0 || activityExtra > 0) trackedDays += 1;
+  }
+
+  if (trackedDays === 0) {
+    return { deltaKg: 0, direction: "unchanged", startKg: 0, endKg: 0, hasData: false };
+  }
+
+  const deficitFromAnchorTo = (throughKey: string): number => {
+    let total = 0;
+    let cursor = firstDeficitDay;
+    const throughMs = dateKeyToDate(throughKey).getTime();
+    while (dateKeyToDate(cursor).getTime() <= throughMs) {
+      const burned = burnedByDay.get(cursor) ?? dailyBmr;
+      const consumed = consumedByDay.get(cursor) ?? 0;
+      total += burned - consumed;
+      cursor = nextDayKey(cursor);
+    }
+    return total;
+  };
+
+  const periodStartKey = toLocalDateKey(periodStart);
+  const weightAt = (throughKey: string): number => {
+    const deficitKcal = deficitFromAnchorTo(throughKey);
+    return anchor.anchorKg - deficitKcal / KCAL_PER_KG_FAT;
+  };
+
+  const startKg = weightAt(periodStartKey);
+  const endKg = weightAt(rangeEndKey);
+
+  return buildWeightChangeResult(startKg, endKg, {
+    isEstimated: true,
+    disclaimer: ESTIMATED_WEIGHT_DISCLAIMER,
+    anchorDate: anchor.anchorDate,
+  });
+}
+
+function latestWeightByDate(
+  rows: Array<{ recordedAt: Date; weightKg: string | null }>,
+): Map<string, number> {
+  const byDate = new Map<string, number>();
+  for (const row of rows) {
+    const key = toLocalDateKey(new Date(row.recordedAt));
+    const w = parseWeightKg(row.weightKg);
+    if (w != null) byDate.set(key, w);
+  }
+  return byDate;
+}
+
+async function getLoggedScaleWeightChange(
+  userId: string,
+  period: WeightChangePeriod,
+): Promise<WeightChangeResult | null> {
+  const { start, end } = weightChangeBounds(period);
+
+  const conditions = [
+    eq(weightLogs.userId, userId),
+    lte(weightLogs.recordedAt, end),
+    or(isNull(weightLogs.notes), ne(weightLogs.notes, "fittrack_demo_seed")),
+  ];
+  if (start) {
+    conditions.push(gte(weightLogs.recordedAt, start));
+  }
+
+  const rows = await db
+    .select({ recordedAt: weightLogs.recordedAt, weightKg: weightLogs.weightKg })
+    .from(weightLogs)
+    .where(and(...conditions))
+    .orderBy(asc(weightLogs.recordedAt));
+
+  if (period === "1d") {
+    const todayKey = toLocalDateKey(new Date());
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = toLocalDateKey(yesterday);
+
+    const allRows = await db
+      .select({ recordedAt: weightLogs.recordedAt, weightKg: weightLogs.weightKg })
+      .from(weightLogs)
+      .where(
+        and(
+          eq(weightLogs.userId, userId),
+          or(isNull(weightLogs.notes), ne(weightLogs.notes, "fittrack_demo_seed")),
+        ),
+      )
+      .orderBy(asc(weightLogs.recordedAt));
+
+    const byDate = latestWeightByDate(allRows);
+    const todayKg = byDate.get(todayKey);
+    const yesterdayKg = byDate.get(yesterdayKey);
+    if (todayKg != null && yesterdayKg != null) {
+      return buildWeightChangeResult(yesterdayKg, todayKg);
+    }
+    return null;
+  }
+
+  if (rows.length < 2) {
+    return null;
+  }
+
+  const first = parseWeightKg(rows[0].weightKg)!;
+  const last = parseWeightKg(rows[rows.length - 1].weightKg)!;
+  return buildWeightChangeResult(first, last);
+}
+
+async function getScaleWeightChange(
+  userId: string,
+  period: WeightChangePeriod,
+): Promise<WeightChangeResult> {
+  const logged = await getLoggedScaleWeightChange(userId, period);
+  if (logged) return logged;
+  return getEstimatedScaleWeightChange(userId, period);
+}
+
+async function getInbodyWeightChange(
+  userId: string,
+  period: WeightChangePeriod,
+): Promise<WeightChangeResult> {
+  const { start, end } = weightChangeBounds(period);
+
+  const conditions = [
+    eq(inbodyReports.userId, userId),
+    eq(inbodyReports.status, "done"),
+    lte(inbodyReports.createdAt, end),
+  ];
+  if (start) {
+    conditions.push(gte(inbodyReports.createdAt, start));
+  }
+
+  const rows = await db
+    .select({ createdAt: inbodyReports.createdAt, extractedMetrics: inbodyReports.extractedMetrics })
+    .from(inbodyReports)
+    .where(and(...conditions))
+    .orderBy(asc(inbodyReports.createdAt));
+
+  if (period === "1d") {
+    const todayKey = toLocalDateKey(new Date());
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = toLocalDateKey(yesterday);
+
+    const allRows = await db
+      .select({ createdAt: inbodyReports.createdAt, extractedMetrics: inbodyReports.extractedMetrics })
+      .from(inbodyReports)
+      .where(and(eq(inbodyReports.userId, userId), eq(inbodyReports.status, "done")))
+      .orderBy(asc(inbodyReports.createdAt));
+
+    const byDate = new Map<string, number>();
+    for (const row of allRows) {
+      const m = (row.extractedMetrics ?? {}) as Record<string, string>;
+      const w = parseWeightKg(m.weight);
+      if (w != null) byDate.set(toLocalDateKey(new Date(row.createdAt)), w);
+    }
+    const todayKg = byDate.get(todayKey);
+    const yesterdayKg = byDate.get(yesterdayKey);
+    if (todayKg != null && yesterdayKg != null) {
+      return buildWeightChangeResult(yesterdayKg, todayKg);
+    }
+    return { deltaKg: 0, direction: "unchanged", startKg: 0, endKg: 0, hasData: false };
+  }
+
+  const weights: number[] = [];
+  for (const row of rows) {
+    const m = (row.extractedMetrics ?? {}) as Record<string, string>;
+    const w = parseWeightKg(m.weight);
+    if (w != null) weights.push(w);
+  }
+
+  if (weights.length < 2) {
+    return { deltaKg: 0, direction: "unchanged", startKg: 0, endKg: 0, hasData: false };
+  }
+
+  return buildWeightChangeResult(weights[0], weights[weights.length - 1]);
+}
+
+export async function getWeightChange(
+  userId: string,
+  period: WeightChangePeriod = "1w",
+  source: WeightChangeSource = "scale",
+): Promise<WeightChangeResult> {
+  if (source === "inbody") {
+    return getInbodyWeightChange(userId, period);
+  }
+  return getScaleWeightChange(userId, period);
 }

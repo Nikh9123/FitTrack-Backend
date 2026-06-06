@@ -11,6 +11,7 @@ import {
   syncActivity,
   getProgressHistory,
   getProgressInsights,
+  getWeightChangeEndpoint,
 } from "./progress.controller";
 
 const router = Router();
@@ -25,5 +26,6 @@ router.get("/progress/fitness-score", requireAuth, getFitnessScore);
 router.post("/progress/activity/sync", requireAuth, syncActivity);
 router.get("/progress/history", requireAuth, getProgressHistory);
 router.get("/progress/insights", requireAuth, getProgressInsights);
+router.get("/progress/weight-change", requireAuth, getWeightChangeEndpoint);
 
 export default router;

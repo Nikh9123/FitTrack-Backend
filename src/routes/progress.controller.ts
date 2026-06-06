@@ -12,7 +12,14 @@ import { logger } from "../lib/logger";
 import type { AuthenticatedRequest } from "../lib/auth";
 import Groq from "groq-sdk";
 import { upsertDailyActivitySummary, upsertSleepMinutes } from "../services/activityService";
-import { getHistoryInsights, getUnifiedHistory, type HistoryPeriod } from "../services/historyService";
+import {
+  getHistoryInsights,
+  getUnifiedHistory,
+  getWeightChange,
+  type HistoryPeriod,
+  type WeightChangePeriod,
+  type WeightChangeSource,
+} from "../services/historyService";
 
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
@@ -591,6 +598,31 @@ export async function getProgressHistory(req: AuthenticatedRequest, res: Respons
   } catch (err: any) {
     logger.error({ err: err.message }, "getProgressHistory failed");
     return res.status(500).json({ error: "Failed to fetch activity history" });
+  }
+}
+
+// ─── GET /api/progress/weight-change?period=1d|1w|1m|all&source=scale|inbody ─
+
+export async function getWeightChangeEndpoint(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth!.sub;
+  const period = String(req.query.period ?? "1w") as WeightChangePeriod;
+  const source = String(req.query.source ?? "scale") as WeightChangeSource;
+  const allowedPeriods = new Set<WeightChangePeriod>(["1d", "1w", "1m", "all"]);
+  const allowedSources = new Set<WeightChangeSource>(["scale", "inbody"]);
+
+  if (!allowedPeriods.has(period)) {
+    return res.status(400).json({ error: "Invalid period — use 1d, 1w, 1m, or all" });
+  }
+  if (!allowedSources.has(source)) {
+    return res.status(400).json({ error: "Invalid source — use scale or inbody" });
+  }
+
+  try {
+    const change = await getWeightChange(userId, period, source);
+    return res.json({ change });
+  } catch (err: any) {
+    logger.error({ err: err.message }, "getWeightChange failed");
+    return res.status(500).json({ error: "Failed to fetch weight change" });
   }
 }
 

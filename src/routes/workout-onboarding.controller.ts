@@ -11,7 +11,7 @@ import { eq, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import Groq from "groq-sdk";
 import type { AuthenticatedRequest } from "../lib/auth";
-import { fetchExercisesByBodyPart } from "../lib/exercisedb";
+import { fetchExercisesByBodyPart, type WorkoutLocation } from "../lib/exercisedb";
 import { saveOnboardingPlanDirectly } from "../services/workoutService";
 
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
@@ -138,7 +138,12 @@ export async function aiRecommendGoal(req: AuthenticatedRequest, res: Response) 
 // ─── POST /api/workout/onboarding/generate-plan ───────────────────────────────
 export async function generateWorkoutPlan(req: AuthenticatedRequest, res: Response) {
   const userId = req.auth!.sub;
-  const { goal, level = "beginner" } = req.body as { goal: FitnessGoal; level?: string };
+  const { goal, level = "beginner", workoutLocation = "gym" } = req.body as {
+    goal: FitnessGoal;
+    level?: string;
+    workoutLocation?: WorkoutLocation;
+  };
+  const location: WorkoutLocation = workoutLocation === "home" ? "home" : "gym";
 
   if (!goal || !FITNESS_GOALS.includes(goal)) {
     return res.status(400).json({ error: "Invalid fitness goal" });
@@ -157,10 +162,10 @@ export async function generateWorkoutPlan(req: AuthenticatedRequest, res: Respon
     const analysis = (report?.geminiAnalysis as Record<string, unknown> | null) ?? {};
 
     // Step 1: AI decides the workout strategy (split, frequency, intensity)
-    let strategy = await buildWorkoutStrategy(goal, metrics, analysis, level);
+    let strategy = await buildWorkoutStrategy(goal, metrics, analysis, level, location);
 
     // Step 2: Fetch exercises from ExerciseDB for each training day
-    const plan = await buildExercisePlan(strategy, goal);
+    const plan = await buildExercisePlan(strategy, goal, location);
 
     return res.json({
       success: true,
@@ -176,11 +181,12 @@ export async function generateWorkoutPlan(req: AuthenticatedRequest, res: Respon
 // ─── POST /api/workout/onboarding/save ────────────────────────────────────────
 export async function saveOnboarding(req: AuthenticatedRequest, res: Response) {
   const userId = req.auth!.sub;
-  const { goal, aiRecommendedGoal, workoutPlan, strategy } = req.body as {
+  const { goal, aiRecommendedGoal, workoutPlan, strategy, workoutLocation } = req.body as {
     goal: string;
     aiRecommendedGoal?: string;
     workoutPlan?: unknown;
     strategy?: unknown;
+    workoutLocation?: WorkoutLocation;
   };
 
   if (!goal) {
@@ -203,6 +209,7 @@ export async function saveOnboarding(req: AuthenticatedRequest, res: Response) {
       aiRecommendedGoal: aiRecommendedGoal ?? null,
       workoutStrategy: strategy ?? null,
       generatedWorkoutPlan: workoutPlan ?? null,
+      workoutLocation: workoutLocation === "home" ? "home" : "gym",
       workoutOnboardingAt: new Date().toISOString(),
     };
 
@@ -338,9 +345,10 @@ async function buildWorkoutStrategy(
   metrics: Record<string, string>,
   analysis: Record<string, unknown>,
   level: string,
+  location: WorkoutLocation = "gym",
 ): Promise<WorkoutStrategy> {
   if (!groq) {
-    return getDefaultStrategy(goal, level);
+    return getDefaultStrategy(goal, level, location);
   }
 
   const bodyFat = metrics.bodyFat ?? "unknown";
@@ -348,9 +356,17 @@ async function buildWorkoutStrategy(
   const bmi = metrics.bmi ?? "unknown";
   const visceralFat = metrics.visceralFat ?? "unknown";
 
+  const locationNote =
+    location === "home"
+      ? "User trains at HOME with bodyweight, dumbbells, and resistance bands only — no machines, barbells, or cables."
+      : "User trains at a GYM with full equipment access.";
+
   const prompt = `Goal: ${goal}
 Level: ${level}
+Training location: ${location}
 Body Fat: ${bodyFat}%, SMM: ${smm} kg, BMI: ${bmi}, Visceral Fat: ${visceralFat}
+
+${locationNote}
 
 Design a weekly workout strategy. Return ONLY this JSON structure (no extra fields):
 {
@@ -382,7 +398,8 @@ Rules:
 - For rest days set bodyParts to []
 - For beginners use 3 days training + 1-2 cardio + rest
 - For Fat Loss include more cardio days and shorter rest periods
-- Match intensity to body fat level`;
+- Match intensity to body fat level
+- For home training: prefer full-body splits, shorter sessions (35-45 min), bodyweight and dumbbell-friendly body parts`;
 
   try {
     const completion = await groq.chat.completions.create({
@@ -406,11 +423,11 @@ Rules:
     return strategy;
   } catch (err: any) {
     logger.warn({ err: err.message, goal }, "Strategy generation failed — using default");
-    return getDefaultStrategy(goal, level);
+    return getDefaultStrategy(goal, level, location);
   }
 }
 
-function getDefaultStrategy(goal: FitnessGoal, level: string): WorkoutStrategy {
+function getDefaultStrategy(goal: FitnessGoal, level: string, _location: WorkoutLocation = "gym"): WorkoutStrategy {
   const isBeginnerOrFatLoss = level === "beginner" || goal === "Fat Loss";
 
   if (goal === "Fat Loss") {
@@ -505,6 +522,7 @@ export interface ExercisePlanDay {
 async function buildExercisePlan(
   strategy: WorkoutStrategy,
   goal: FitnessGoal,
+  location: WorkoutLocation = "gym",
 ): Promise<ExercisePlanDay[]> {
   const plan: ExercisePlanDay[] = [];
 
@@ -523,7 +541,12 @@ async function buildExercisePlan(
     }
 
     if (day.isCardio) {
-      const cardioExercises = await fetchExercisesByBodyPart("cardio", 3);
+      const cardioLimit = location === "home" ? 4 : 3;
+      const cardioExercises = await fetchExercisesByBodyPart("cardio", cardioLimit, { location });
+      const homeCardio = location === "home"
+        ? cardioExercises.filter((ex) => !["treadmill", "machine", "stationary bike"].some((b) => ex.equipment.toLowerCase().includes(b)))
+        : cardioExercises;
+      const selectedCardio = homeCardio.length > 0 ? homeCardio : cardioExercises;
       plan.push({
         dayName: day.dayName,
         focus: day.focus,
@@ -531,7 +554,7 @@ async function buildExercisePlan(
         isCardio: true,
         estimatedCalories: 280,
         estimatedDuration: day.repsRange || "30 min",
-        exercises: cardioExercises.map((ex) => ({
+        exercises: selectedCardio.slice(0, 3).map((ex) => ({
           ...ex,
           sets: 1,
           repsRange: day.repsRange || "30 min",
@@ -547,7 +570,7 @@ async function buildExercisePlan(
 
     for (const bodyPart of day.bodyParts) {
       const exLimit = Math.min(3, Math.ceil(6 / day.bodyParts.length));
-      const fetched = await fetchExercisesByBodyPart(bodyPart, exLimit);
+      const fetched = await fetchExercisesByBodyPart(bodyPart, exLimit, { location });
 
       for (const ex of fetched) {
         const difficulty = day.sets >= 4 ? "Intermediate" : "Beginner";

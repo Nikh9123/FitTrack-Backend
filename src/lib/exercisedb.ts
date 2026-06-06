@@ -13,6 +13,29 @@ import { logger } from "./logger";
 const BASE = "https://oss.exercisedb.dev/api/v1";
 const TIMEOUT_MS = 10_000;
 
+export type WorkoutLocation = "gym" | "home";
+
+const HOME_EQUIPMENT = new Set([
+  "body weight",
+  "dumbbell",
+  "resistance band",
+  "kettlebell",
+  "medicine ball",
+  "stability ball",
+  "band",
+]);
+
+function isHomeEquipment(equipment: string): boolean {
+  const key = equipment.toLowerCase().trim();
+  return HOME_EQUIPMENT.has(key) || key.includes("body weight") || key.includes("dumbbell");
+}
+
+function filterByLocation(exercises: ExerciseDBExercise[], location: WorkoutLocation): ExerciseDBExercise[] {
+  if (location === "gym") return exercises;
+  const filtered = exercises.filter((ex) => isHomeEquipment(ex.equipment));
+  return filtered.length > 0 ? filtered : exercises.filter((ex) => isHomeEquipment(ex.equipment) || ex.equipment.toLowerCase().includes("body"));
+}
+
 // ─── Canonical shape ──────────────────────────────────────────────────────────
 
 export interface ExerciseDBExercise {
@@ -97,7 +120,9 @@ async function get(url: string): Promise<ApiResponse> {
 export async function fetchExercisesByBodyPart(
   bodyPart: string,
   limit = 6,
+  options?: { location?: WorkoutLocation },
 ): Promise<ExerciseDBExercise[]> {
+  const location = options?.location ?? "gym";
   const key = bodyPart.toLowerCase().trim();
 
   // Map legacy/common names to exercisedb.dev body part names
@@ -125,12 +150,13 @@ export async function fetchExercisesByBodyPart(
       throw new Error(`Empty or failed response for bodyPart="${mapped}"`);
     }
 
-    const exercises = payload.data.slice(0, limit).map(normalise);
+    const exercises = filterByLocation(payload.data.slice(0, limit * 2).map(normalise), location).slice(0, limit);
     logger.info({ bodyPart: mapped, count: exercises.length, total: payload.meta?.total }, "exercisedb.dev ✓");
-    return exercises;
+    if (exercises.length > 0) return exercises;
+    return getFallback(key, limit, location);
   } catch (err: any) {
     logger.warn({ bodyPart: mapped, err: err.message }, "exercisedb.dev failed → static fallback");
-    return getFallback(key, limit);
+    return getFallback(key, limit, location);
   }
 }
 
@@ -199,13 +225,34 @@ const STATIC_FALLBACK: Record<string, ExerciseDBExercise[]> = {
     { id: "f_card_1", name: "Treadmill Intervals", bodyPart: "Cardio", target: "Cardiovascular System", secondaryMuscles: [], equipment: "Treadmill", gifUrl: "", instructions: ["Set incline to 2–5° for optimal fat burn.", "Maintain 65–75% of max heart rate.", "Alternate 1 min fast / 1 min walk.", "Aim for 20–40 minute sessions."] },
     { id: "f_card_2", name: "Stationary Bike", bodyPart: "Cardio", target: "Cardiovascular System", secondaryMuscles: ["Quads", "Glutes"], equipment: "Machine", gifUrl: "", instructions: ["Adjust seat so leg is nearly straight at bottom.", "Pedal at 70–90 RPM for fat burning.", "Keep moderate resistance throughout.", "Use steady-state or interval mode."] },
     { id: "f_card_3", name: "Jump Rope", bodyPart: "Cardio", target: "Cardiovascular System", secondaryMuscles: ["Calves", "Shoulders"], equipment: "Body Weight", gifUrl: "", instructions: ["Keep elbows close to body, wrists rotating.", "Jump just high enough for rope to pass.", "Use 30s on / 30s off for HIIT.", "High calorie burn, zero equipment needed."] },
+    { id: "f_card_4", name: "Burpees", bodyPart: "Cardio", target: "Cardiovascular System", secondaryMuscles: ["Quads", "Chest"], equipment: "Body Weight", gifUrl: "", instructions: ["Drop to squat, kick feet back to plank.", "Perform a push-up, jump feet forward.", "Explode upward with arms overhead.", "Repeat for timed intervals."] },
+    { id: "f_card_5", name: "Mountain Climbers", bodyPart: "Cardio", target: "Cardiovascular System", secondaryMuscles: ["Abs", "Shoulders"], equipment: "Body Weight", gifUrl: "", instructions: ["Start in high plank position.", "Drive knees alternately toward chest.", "Keep hips level and core tight.", "Maintain fast pace for 30–60 seconds."] },
   ],
 };
 
-function getFallback(bodyPart: string, limit: number): ExerciseDBExercise[] {
+const HOME_STATIC_OVERRIDES: Partial<Record<string, ExerciseDBExercise[]>> = {
+  chest: [
+    { id: "h_chest_1", name: "Push-ups", bodyPart: "Chest", target: "Pectorals", secondaryMuscles: ["Triceps"], equipment: "Body Weight", gifUrl: "", instructions: ["Hands shoulder-width, body in straight line.", "Lower chest to floor with control.", "Press up explosively.", "Modify on knees if needed."] },
+    { id: "h_chest_2", name: "Dumbbell Floor Press", bodyPart: "Chest", target: "Pectorals", secondaryMuscles: ["Triceps"], equipment: "Dumbbell", gifUrl: "", instructions: ["Lie on floor with dumbbells at chest.", "Press up until arms extend.", "Lower until elbows touch floor.", "Great home alternative to bench press."] },
+  ],
+  "upper legs": [
+    { id: "h_legs_1", name: "Bodyweight Squat", bodyPart: "Upper Legs", target: "Quads", secondaryMuscles: ["Glutes"], equipment: "Body Weight", gifUrl: "", instructions: ["Feet shoulder-width, chest up.", "Sit hips back and down.", "Drive through heels to stand.", "Keep knees tracking over toes."] },
+    { id: "h_legs_2", name: "Walking Lunges", bodyPart: "Upper Legs", target: "Quads", secondaryMuscles: ["Glutes"], equipment: "Body Weight", gifUrl: "", instructions: ["Step forward into a lunge.", "Back knee hovers above floor.", "Push off front foot to next rep.", "Alternate legs each step."] },
+  ],
+  back: [
+    { id: "h_back_1", name: "Inverted Row", bodyPart: "Back", target: "Lats", secondaryMuscles: ["Biceps"], equipment: "Body Weight", gifUrl: "", instructions: ["Use sturdy table or bar at waist height.", "Pull chest to bar keeping body straight.", "Squeeze shoulder blades together.", "Lower with control."] },
+    { id: "h_back_2", name: "Resistance Band Row", bodyPart: "Back", target: "Upper Back", secondaryMuscles: ["Biceps"], equipment: "Resistance Band", gifUrl: "", instructions: ["Anchor band at chest height.", "Pull handles to ribs, elbows back.", "Pause and squeeze.", "Control the return."] },
+  ],
+};
+
+function getFallback(bodyPart: string, limit: number, location: WorkoutLocation = "gym"): ExerciseDBExercise[] {
   const key = Object.keys(STATIC_FALLBACK).find(
     (k) => bodyPart.includes(k) || k.includes(bodyPart),
   );
-  const list = key ? STATIC_FALLBACK[key] : STATIC_FALLBACK.cardio;
+  const baseKey = key ?? "cardio";
+  const homeList = HOME_STATIC_OVERRIDES[baseKey];
+  const list = location === "home" && homeList
+    ? [...homeList, ...filterByLocation(STATIC_FALLBACK[baseKey], "home")]
+    : STATIC_FALLBACK[baseKey];
   return list.slice(0, limit);
 }

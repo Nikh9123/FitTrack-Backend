@@ -17,6 +17,7 @@ import type { AuthenticatedRequest } from "../lib/auth";
 import { logger } from "../lib/logger";
 import {
   createReport,
+  createEstimatedReport,
   reanalyzeReport,
   listReports,
   getReportById,
@@ -48,6 +49,9 @@ function handleServiceError(err: unknown, res: Response): Response {
       success: false,
       message: "No extracted metrics available. Upload a report first.",
     });
+  }
+  if (e?.code === "INVALID_INPUT") {
+    return res.status(400).json({ success: false, message: e.message ?? "Invalid input" });
   }
   logger.error({ err }, "Unhandled service error");
   return res.status(500).json({ success: false, message: "Internal server error" });
@@ -90,6 +94,43 @@ export async function uploadInbodyReport(
       });
     }
 
+    return res.status(201).json({ success: true, ...result });
+  } catch (err) {
+    return handleServiceError(err, res);
+  }
+}
+
+// ─── POST /api/inbody/estimate-from-measurements ─────────────────────────────
+
+export async function estimateFromMeasurements(
+  req: AuthenticatedRequest,
+  res: Response,
+) {
+  const userId = req.auth!.sub;
+  const body = req.body as {
+    weightKg?: number;
+    weightLb?: number;
+    heightCm?: number;
+    heightFeet?: number;
+    heightInches?: number;
+    waistCm?: number;
+    chestCm?: number;
+  };
+
+  if (!body.waistCm) {
+    return res.status(400).json({ success: false, message: "waistCm is required" });
+  }
+
+  try {
+    const result = await createEstimatedReport(userId, {
+      weightKg: body.weightKg,
+      weightLb: body.weightLb,
+      heightCm: body.heightCm,
+      heightFeet: body.heightFeet,
+      heightInches: body.heightInches,
+      waistCm: body.waistCm,
+      chestCm: body.chestCm ?? 0,
+    });
     return res.status(201).json({ success: true, ...result });
   } catch (err) {
     return handleServiceError(err, res);
