@@ -12,7 +12,9 @@ import {
   normalizeRole,
   requireAuth,
   toPublicUser,
-  supabase,
+  getSupabaseClient,
+  isSupabaseAuthConfigured,
+  verifySupabaseAccessToken,
   logger,
   updateUserProfile,
   deleteUserAccount,
@@ -159,6 +161,18 @@ router.post("/auth/login-phone", async (req, res) => {
 // Mobile calls this to get the Supabase-generated Google OAuth URL.
 // The redirect goes to Supabase, then Supabase redirects to the app's deep link.
 router.post("/auth/google/url", async (req, res) => {
+  if (!isSupabaseAuthConfigured()) {
+    return res.status(503).json({
+      error:
+        "Google sign-in is not configured. Add SUPABASE_URL to your backend .env, or use a Supabase DATABASE_URL so the project URL can be detected automatically.",
+    });
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return res.status(503).json({ error: "Supabase client is not available" });
+  }
+
   const { redirectTo } = req.body;
 
   const { data, error } = await supabase.auth.signInWithOAuth({
@@ -190,18 +204,14 @@ router.post("/auth/google/callback", async (req, res) => {
     return res.status(400).json({ error: "Supabase access token is required" });
   }
 
-  // Verify the Supabase token and get the user
-  const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-    access_token: accessToken,
-    refresh_token: refreshToken ?? "",
-  });
-
-  if (sessionError || !sessionData.user) {
-    logger.error({ error: sessionError?.message }, "Invalid Supabase session from Google");
+  let supaUser;
+  try {
+    supaUser = await verifySupabaseAccessToken(accessToken);
+  } catch (err) {
+    logger.error({ err }, "Invalid Supabase session from Google");
     return res.status(401).json({ error: "Invalid Google session" });
   }
 
-  const supaUser = sessionData.user;
   const email = supaUser.email;
 
   if (!email) {
@@ -214,7 +224,7 @@ router.post("/auth/google/callback", async (req, res) => {
 
   if (!row) {
     isNewUser = true;
-    const fullName: string = supaUser.user_metadata?.full_name ?? "";
+    const fullName = supaUser.user_metadata?.full_name ?? "";
     const [firstName, ...rest] = fullName.split(" ");
     const lastName = rest.join(" ");
 

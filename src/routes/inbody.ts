@@ -2,10 +2,11 @@
  * InBody Routes
  * -------------
  * Mounts:
- *   POST   /api/inbody/upload              — Upload + OCR + Gemini AI a report
- *   POST   /api/inbody/analyze/:reportId   — Run Gemini AI on existing report
- *   GET    /api/inbody/reports              — List user's reports
- *   GET    /api/inbody/reports/:id          — Get a single report
+ *   POST   /api/inbody/upload              — Upload + OCR + AI analyse a report
+ *   POST   /api/inbody/analyze/:reportId   — Re-run AI on an existing report
+ *   GET    /api/inbody/reports             — List user's reports
+ *   GET    /api/inbody/reports/:id         — Get a single report
+ *   DELETE /api/inbody/reports/:id         — Delete a report + its storage file
  */
 
 import { Router } from "express";
@@ -16,14 +17,15 @@ import {
   analyzeInbodyReport,
   listInbodyReports,
   getInbodyReport,
-} from "./inbody.controller";
+  deleteInbodyReport,
+} from "../controllers/inbodyController";
 
 const router = Router();
 
-// ── Multer: store files in memory (buffer), max 10 MB ─────────────────────────
+// ── Multer: in-memory storage, max 10 MB ──────────────────────────────────────
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter(_req, file, cb) {
     const allowed = [
       "image/jpeg",
@@ -54,5 +56,8 @@ router.post("/inbody/analyze/:reportId", requireAuth, analyzeInbodyReport);
 router.get("/inbody/reports", requireAuth, listInbodyReports);
 
 router.get("/inbody/reports/:id", requireAuth, getInbodyReport);
+
+// ── DELETE /api/inbody/reports/:id ────────────────────────────────────────────
+router.delete("/inbody/reports/:id", requireAuth, deleteInbodyReport);
 
 export default router;

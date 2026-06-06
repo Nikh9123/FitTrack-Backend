@@ -11,6 +11,8 @@ import { eq, desc, gte, and, lte } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import type { AuthenticatedRequest } from "../lib/auth";
 import Groq from "groq-sdk";
+import { upsertDailyActivitySummary, upsertSleepMinutes } from "../services/activityService";
+import { getHistoryInsights, getUnifiedHistory, type HistoryPeriod } from "../services/historyService";
 
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
@@ -37,6 +39,12 @@ function daysAgo(n: number): Date {
   return d;
 }
 
+function parseMetricNumber(raw: string | undefined | null): number | null {
+  if (raw == null || raw === "") return null;
+  const n = parseFloat(String(raw).replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
 function buildWeightTrend(entries: any[]): Array<{ week: string; value: number; date: string }> {
   if (!entries.length) return [];
   const sorted = [...entries].sort((a, b) =>
@@ -50,6 +58,48 @@ function buildWeightTrend(entries: any[]): Array<{ week: string; value: number; 
     value: parseFloat(String(e.weightKg)),
     date: new Date(e.recordedAt).toISOString().split("T")[0],
   }));
+}
+
+/** Weight trend from InBody scan history (preferred over manual weight logs). */
+function buildInbodyWeightTrend(reports: any[]): Array<{ week: string; value: number; date: string }> {
+  const sorted = [...reports]
+    .filter((r) => parseMetricNumber((r.extractedMetrics as Record<string, string> | null)?.weight) != null)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  return sorted.map((r, i) => {
+    const m = (r.extractedMetrics ?? {}) as Record<string, string>;
+    const date = new Date(r.createdAt).toISOString().split("T")[0];
+    return {
+      week: sorted.length <= 12 ? `S${i + 1}` : date.slice(5),
+      value: parseMetricNumber(m.weight)!,
+      date,
+    };
+  });
+}
+
+const DEMO_WEIGHT_NOTE = "fittrack_demo_seed";
+
+function filterManualWeightEntries(weightEntries: any[]) {
+  return weightEntries.filter((e) => e.notes !== DEMO_WEIGHT_NOTE);
+}
+
+function resolveLatestWeight(inbodyHistory: any[], manualEntries: any[]) {
+  const candidates: Array<{ value: number; at: number }> = [];
+  const latestInbody = inbodyHistory[0];
+  if (latestInbody) {
+    const m = (latestInbody.extractedMetrics ?? {}) as Record<string, string>;
+    const w = parseMetricNumber(m.weight);
+    if (w != null) candidates.push({ value: w, at: new Date(latestInbody.createdAt).getTime() });
+  }
+  if (manualEntries[0]) {
+    candidates.push({
+      value: parseFloat(String(manualEntries[0].weightKg)),
+      at: new Date(manualEntries[0].recordedAt).getTime(),
+    });
+  }
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => b.at - a.at);
+  return candidates[0].value;
 }
 
 function computeFitnessScore(params: {
@@ -154,29 +204,38 @@ export async function getProgressDashboard(req: AuthenticatedRequest, res: Respo
   const firstInbody = inbodyHistory.length > 1 ? inbodyHistory[inbodyHistory.length - 1] : null;
   const firstMetrics = (firstInbody?.extractedMetrics ?? {}) as Record<string, string>;
 
-  const currentWeight =
-    metrics.weight ? parseFloat(metrics.weight) :
-    weightEntries[0] ? parseFloat(String(weightEntries[0].weightKg)) : null;
+  const manualWeightEntries = filterManualWeightEntries(weightEntries);
+  const inbodyWeightTrend = buildInbodyWeightTrend(inbodyHistory);
+  const manualWeightTrend = buildWeightTrend(manualWeightEntries);
+
+  const currentWeight = resolveLatestWeight(inbodyHistory, manualWeightEntries);
 
   const currentMetrics = {
     weight: currentWeight,
-    bodyFat: metrics.bodyFat ? parseFloat(metrics.bodyFat) : null,
-    muscle: metrics.skeletalMuscleMass ? parseFloat(metrics.skeletalMuscleMass) : null,
-    bmi: metrics.bmi ? parseFloat(metrics.bmi) : null,
-    bmr: metrics.bmr ? parseInt(metrics.bmr) : null,
-    visceralFat: metrics.visceralFat ? parseInt(metrics.visceralFat) : null,
+    bodyFat: parseMetricNumber(metrics.bodyFat),
+    muscle: parseMetricNumber(metrics.skeletalMuscleMass),
+    bmi: parseMetricNumber(metrics.bmi),
+    bmr: metrics.bmr ? parseInt(String(metrics.bmr).replace(/\D/g, ""), 10) || null : null,
+    visceralFat: metrics.visceralFat ? parseInt(String(metrics.visceralFat).replace(/\D/g, ""), 10) || null : null,
   };
 
+  const firstWeight = parseMetricNumber(firstMetrics.weight);
+  const latestWeight = parseMetricNumber(metrics.weight);
+
   const transformationSummary = {
-    weightLost: (firstMetrics.weight && metrics.weight)
-      ? Math.max(0, parseFloat(firstMetrics.weight) - parseFloat(metrics.weight))
+    weightLost: firstWeight != null && latestWeight != null
+      ? Math.max(0, firstWeight - latestWeight)
       : null,
-    muscleGained: (firstMetrics.skeletalMuscleMass && metrics.skeletalMuscleMass)
-      ? Math.max(0, parseFloat(metrics.skeletalMuscleMass) - parseFloat(firstMetrics.skeletalMuscleMass))
-      : null,
-    fatLost: (firstMetrics.bodyFat && metrics.bodyFat)
-      ? Math.max(0, parseFloat(firstMetrics.bodyFat) - parseFloat(metrics.bodyFat))
-      : null,
+    muscleGained: (() => {
+      const first = parseMetricNumber(firstMetrics.skeletalMuscleMass);
+      const latest = parseMetricNumber(metrics.skeletalMuscleMass);
+      return first != null && latest != null ? Math.max(0, latest - first) : null;
+    })(),
+    fatLost: (() => {
+      const first = parseMetricNumber(firstMetrics.bodyFat);
+      const latest = parseMetricNumber(metrics.bodyFat);
+      return first != null && latest != null ? Math.max(0, first - latest) : null;
+    })(),
     scans: inbodyHistory.length,
     weeks: firstInbody
       ? Math.round((new Date(latestInbody!.createdAt).getTime() - new Date(firstInbody.createdAt).getTime()) / (7 * 24 * 60 * 60 * 1000))
@@ -192,7 +251,17 @@ export async function getProgressDashboard(req: AuthenticatedRequest, res: Respo
   });
 
   return res.json({
-    weightTrend: buildWeightTrend(weightEntries),
+    inbodyWeightTrend,
+    manualWeightTrend,
+    /** @deprecated use inbodyWeightTrend / manualWeightTrend — kept for older clients */
+    weightTrend: inbodyWeightTrend.length >= 2 ? inbodyWeightTrend : manualWeightTrend,
+    weightSource: inbodyWeightTrend.length > 0 && manualWeightTrend.length > 0
+      ? "both"
+      : inbodyWeightTrend.length > 0
+        ? "inbody"
+        : manualWeightTrend.length > 0
+          ? "manual"
+          : "none",
     currentMetrics,
     transformationSummary,
     workoutStats: {
@@ -207,6 +276,10 @@ export async function getProgressDashboard(req: AuthenticatedRequest, res: Respo
       steps: a.steps,
       caloriesBurned: a.caloriesBurned,
       sleepMinutes: a.sleepMinutes,
+      walkingMinutes: a.walkingMinutes,
+      runningMinutes: a.runningMinutes,
+      distanceMeters: a.distanceMeters,
+      activeMinutes: a.walkingMinutes + a.runningMinutes,
     })),
     inbodyReports: inbodyHistory.map(r => {
       const m = (r.extractedMetrics ?? {}) as Record<string, string>;
@@ -250,6 +323,11 @@ export async function saveCheckin(req: AuthenticatedRequest, res: Response) {
       recoveryScore: recoveryScore ? parseInt(recoveryScore) : null,
       notes: notes ?? null,
     }).onConflictDoNothing().returning();
+
+    if (sleepHours && parseFloat(String(sleepHours)) > 0) {
+      const dateKey = today.toISOString().split("T")[0];
+      await upsertSleepMinutes(userId, dateKey, parseFloat(String(sleepHours)));
+    }
 
     return res.json({ success: true, checkin: saved ?? null });
   } catch (err: any) {
@@ -458,5 +536,79 @@ export async function getRecentCheckins(req: AuthenticatedRequest, res: Response
   } catch (err: any) {
     logger.error({ err: err.message }, "getRecentCheckins failed");
     return res.status(500).json({ error: "Failed to fetch check-ins" });
+  }
+}
+
+// ─── POST /api/progress/activity/sync ────────────────────────────────────────
+
+export async function syncActivity(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth!.sub;
+  const {
+    summaryDate,
+    steps,
+    walkingMinutes,
+    runningMinutes,
+    caloriesBurned,
+    distanceMeters,
+    rawPayload,
+  } = req.body ?? {};
+
+  if (!summaryDate || typeof summaryDate !== "string") {
+    return res.status(400).json({ error: "summaryDate is required (YYYY-MM-DD)" });
+  }
+
+  try {
+    const summary = await upsertDailyActivitySummary(userId, {
+      summaryDate,
+      steps: Number(steps) || 0,
+      walkingMinutes: Number(walkingMinutes) || 0,
+      runningMinutes: Number(runningMinutes) || 0,
+      caloriesBurned: Number(caloriesBurned) || 0,
+      distanceMeters: Number(distanceMeters) || 0,
+      rawPayload: rawPayload ?? null,
+    });
+
+    return res.json({ success: true, summary });
+  } catch (err: any) {
+    logger.error({ err: err.message, userId }, "syncActivity failed");
+    return res.status(500).json({ error: err.message || "Failed to sync activity" });
+  }
+}
+
+// ─── GET /api/progress/history?period=7d|30d|90d|1y ─────────────────────────
+
+export async function getProgressHistory(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth!.sub;
+  const period = String(req.query.period ?? "7d") as HistoryPeriod;
+  const allowed = new Set<HistoryPeriod>(["7d", "30d", "90d", "1y"]);
+  if (!allowed.has(period)) {
+    return res.status(400).json({ error: "Invalid period — use 7d, 30d, 90d, or 1y" });
+  }
+
+  try {
+    const history = await getUnifiedHistory(userId, period);
+    return res.json({ history });
+  } catch (err: any) {
+    logger.error({ err: err.message }, "getProgressHistory failed");
+    return res.status(500).json({ error: "Failed to fetch activity history" });
+  }
+}
+
+// ─── GET /api/progress/insights?period=7d ────────────────────────────────────
+
+export async function getProgressInsights(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth!.sub;
+  const period = String(req.query.period ?? "7d") as HistoryPeriod;
+  const allowed = new Set<HistoryPeriod>(["7d", "30d", "90d", "1y"]);
+  if (!allowed.has(period)) {
+    return res.status(400).json({ error: "Invalid period" });
+  }
+
+  try {
+    const insights = await getHistoryInsights(userId, period);
+    return res.json({ insights });
+  } catch (err: any) {
+    logger.error({ err: err.message }, "getProgressInsights failed");
+    return res.status(500).json({ error: "Failed to fetch insights" });
   }
 }

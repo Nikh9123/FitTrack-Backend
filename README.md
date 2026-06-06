@@ -77,12 +77,15 @@ fitTrack-backend/
 │   │   ├── exercisedb.ts          # ExerciseDB API client + static fallback
 │   │   ├── inbody-ocr.ts          # OCR orchestrator (Vision → text → stub)
 │   │   └── inbody-parser.ts       # Regex metric extractor
+│   ├── controllers/
+│   │   └── inbodyController.ts    # HTTP layer — validates input, maps errors
+│   ├── services/
+│   │   └── inbodyService.ts       # Business logic — DB queries + Storage ops
 │   ├── routes/
 │   │   ├── index.ts               # Router aggregator
 │   │   ├── health.ts              # GET /api/healthz
 │   │   ├── auth.ts                # Auth routes
-│   │   ├── inbody.ts              # InBody routes
-│   │   ├── inbody.controller.ts   # InBody business logic
+│   │   ├── inbody.ts              # InBody routes (→ controllers/)
 │   │   ├── progress.ts            # Progress routes
 │   │   ├── progress.controller.ts # Progress business logic
 │   │   ├── workout-onboarding.ts  # Workout onboarding routes
@@ -397,8 +400,9 @@ Base URL: `http://localhost:5000/api`
 |---|---|---|---|
 | POST | `/inbody/upload` | ✅ | Upload InBody report image/PDF → OCR → AI analysis |
 | POST | `/inbody/analyze/:reportId` | ✅ | Re-run AI analysis on existing report |
-| GET | `/inbody/reports` | ✅ | List all user's reports |
+| GET | `/inbody/reports` | ✅ | List all user's reports (newest first) |
 | GET | `/inbody/reports/:id` | ✅ | Get single report with full AI analysis |
+| DELETE | `/inbody/reports/:id` | ✅ | Delete report from DB + remove file from storage |
 
 **Upload** (`multipart/form-data`):
 - Field name: `report`
@@ -420,10 +424,35 @@ Base URL: `http://localhost:5000/api`
   },
   "geminiAnalysis": {
     "overallSummary": "...",
-    "bodyFatAnalysis": { ... },
-    "workoutPlan": { ... }
+    "bodyFatAnalysis": { },
+    "workoutPlan": { }
   }
 }
+```
+
+**DELETE `/inbody/reports/:id`** responses:
+
+```json
+// 200 — success
+{ "success": true, "message": "Report deleted successfully" }
+
+// 400 — invalid UUID
+{ "success": false, "message": "Invalid report ID format" }
+
+// 403 — report belongs to another user
+{ "success": false, "message": "Access denied" }
+
+// 404 — not found (or already deleted)
+{ "success": false, "message": "Report not found" }
+```
+
+> **Storage behaviour:** the associated file is deleted from Supabase Storage before the DB row is removed. If storage deletion fails (e.g. bucket permissions), a warning is logged but the DB row is still deleted. The API never returns 500 just because storage cleanup failed.
+
+> **Frontend UX hints for this endpoint:**
+> - Disable the delete button and show a loading spinner while the request is in-flight
+> - On `200` — remove the card from the list with a fade-out / slide-out animation
+> - On `404` — silently remove from UI (already gone)
+> - Show an empty state (`"No reports uploaded yet."`) when the list becomes empty
 ```
 
 ---

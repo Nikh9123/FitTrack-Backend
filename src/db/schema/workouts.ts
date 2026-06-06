@@ -218,3 +218,88 @@ export const insertWorkoutSessionSchema = createInsertSchema(workoutSessions).om
 export const insertWorkoutSessionItemSchema = createInsertSchema(workoutSessionItems).omit({ id: true });
 export const insertExerciseProgressSchema = createInsertSchema(exerciseProgress).omit({ id: true, recordedAt: true });
 export const insertExerciseVariationSchema = createInsertSchema(exerciseVariations).omit({ id: true });
+
+// ─── WORKOUT PERSISTENCE & TRACKING TABLES ───
+
+export const userWorkoutPlans = pgTable("user_workout_plans", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  category: text("category"),
+  goal: text("goal"),
+  estimatedCalories: integer("estimated_calories"),
+  estimatedDuration: text("estimated_duration"),
+  aiGenerated: boolean("ai_generated").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const userWorkoutExercises = pgTable("user_workout_exercises", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workoutPlanId: uuid("workout_plan_id").notNull().references(() => userWorkoutPlans.id, { onDelete: "cascade" }),
+  exerciseId: uuid("exercise_id").notNull().references(() => exercises.id, { onDelete: "cascade" }),
+  exerciseName: text("exercise_name").notNull(),
+  dayName: text("day_name").notNull(),
+  sets: integer("sets").notNull(),
+  reps: text("reps"),
+  calories: integer("calories"),
+  equipment: text("equipment"),
+  muscleGroup: text("muscle_group"),
+  tutorialUrl: text("tutorial_url"),
+  orderIndex: integer("order_index").notNull(),
+});
+
+export const userWorkoutSessions = pgTable("user_workout_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  workoutPlanId: uuid("workout_plan_id").references(() => userWorkoutPlans.id, { onDelete: "set null" }),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  totalDuration: integer("total_duration"),
+  caloriesBurned: integer("calories_burned").default(0),
+  completionPercentage: integer("completion_percentage").default(0),
+});
+
+export const exerciseLogs = pgTable("exercise_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workoutSessionId: uuid("workout_session_id").notNull().references(() => userWorkoutSessions.id, { onDelete: "cascade" }),
+  exerciseId: uuid("exercise_id").notNull().references(() => exercises.id, { onDelete: "cascade" }),
+  weight: numeric("weight"),
+  reps: integer("reps"),
+  setsCompleted: integer("sets_completed").notNull().default(1),
+  duration: integer("duration"),
+  notes: text("notes"),
+  loggedAt: timestamp("logged_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const personalRecords = pgTable("personal_records", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  exerciseId: uuid("exercise_id").notNull().references(() => exercises.id, { onDelete: "cascade" }),
+  maxWeight: numeric("max_weight").notNull(),
+  maxReps: integer("max_reps").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const activityInsights = pgTable("activity_insights", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  weeklyCalories: integer("weekly_calories").default(0).notNull(),
+  monthlyCalories: integer("monthly_calories").default(0).notNull(),
+  streakDays: integer("streak_days").default(0).notNull(),
+  workoutsCompleted: integer("workouts_completed").default(0).notNull(),
+  totalVolumeLifted: numeric("total_volume_lifted").default("0").notNull(),
+});
+
+export type UserWorkoutPlan = InferModel<typeof userWorkoutPlans>;
+export type UserWorkoutExercise = InferModel<typeof userWorkoutExercises>;
+export type UserWorkoutSession = InferModel<typeof userWorkoutSessions>;
+export type ExerciseLog = InferModel<typeof exerciseLogs>;
+export type PersonalRecord = InferModel<typeof personalRecords>;
+export type ActivityInsight = InferModel<typeof activityInsights>;
+
+export const insertUserWorkoutPlanSchema = createInsertSchema(userWorkoutPlans).omit({ id: true, createdAt: true });
+export const insertUserWorkoutExerciseSchema = createInsertSchema(userWorkoutExercises).omit({ id: true });
+export const insertUserWorkoutSessionSchema = createInsertSchema(userWorkoutSessions).omit({ id: true });
+export const insertExerciseLogSchema = createInsertSchema(exerciseLogs).omit({ id: true, loggedAt: true });
+export const insertPersonalRecordSchema = createInsertSchema(personalRecords).omit({ id: true, updatedAt: true });
+export const insertActivityInsightSchema = createInsertSchema(activityInsights).omit({ id: true });

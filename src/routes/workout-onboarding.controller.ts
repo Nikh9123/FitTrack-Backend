@@ -12,6 +12,7 @@ import { logger } from "../lib/logger";
 import Groq from "groq-sdk";
 import type { AuthenticatedRequest } from "../lib/auth";
 import { fetchExercisesByBodyPart } from "../lib/exercisedb";
+import { saveOnboardingPlanDirectly } from "../services/workoutService";
 
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
@@ -213,6 +214,10 @@ export async function saveOnboarding(req: AuthenticatedRequest, res: Response) {
         updatedAt: new Date(),
       })
       .where(eq(userProfiles.userId, userId));
+
+    if (workoutPlan && strategy) {
+      await saveOnboardingPlanDirectly(userId, goal, workoutPlan as any[], strategy);
+    }
 
     return res.json({ success: true });
   } catch (err: any) {

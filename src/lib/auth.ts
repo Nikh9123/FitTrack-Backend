@@ -1,8 +1,8 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { NextFunction, Request, Response } from "express";
-import { createClient } from "@supabase/supabase-js";
 import { db, userProfiles, users } from "../db";
+import { getSupabaseClient } from "./supabase-config";
 import { eq } from "drizzle-orm";
 import type { User, UserProfile } from "../db";
 import { logger } from "./logger";
@@ -34,18 +34,8 @@ const jwtSecret: jwt.Secret =
   _JWT_SECRET_RAW ?? "dev-only-insecure-jwt-secret-CHANGE-IN-PRODUCTION";
 
 // ─── Supabase ─────────────────────────────────────────────────────────────────
-const SUPABASE_URL = process.env.SUPABASE_URL ?? "";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? "";
-
-if ((!SUPABASE_URL || !SUPABASE_ANON_KEY) && process.env.NODE_ENV === "production") {
-  throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY must be set");
-}
-
-// Use placeholder URLs in dev if not configured — Supabase operations will
-// fail gracefully at runtime, but the server will start.
-export const supabase = SUPABASE_URL
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : createClient("https://placeholder.supabase.co", "placeholder-anon-key");
+export { getSupabaseClient, isSupabaseAuthConfigured, verifySupabaseAccessToken } from "./supabase-config";
+export const supabase = getSupabaseClient();
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 export function createJwtToken(user: User, onboardingCompleted: boolean) {

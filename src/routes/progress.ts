@@ -8,6 +8,9 @@ import {
   getAIInsights,
   getFitnessScore,
   getRecentCheckins,
+  syncActivity,
+  getProgressHistory,
+  getProgressInsights,
 } from "./progress.controller";
 
 const router = Router();
@@ -19,5 +22,8 @@ router.get("/progress/checkins/recent", requireAuth, getRecentCheckins);
 router.post("/progress/weight", requireAuth, logWeight);
 router.get("/progress/ai-insights", requireAuth, getAIInsights);
 router.get("/progress/fitness-score", requireAuth, getFitnessScore);
+router.post("/progress/activity/sync", requireAuth, syncActivity);
+router.get("/progress/history", requireAuth, getProgressHistory);
+router.get("/progress/insights", requireAuth, getProgressInsights);
 
 export default router;

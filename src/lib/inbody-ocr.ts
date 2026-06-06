@@ -36,38 +36,102 @@ const storageClient = createClient(
 
 const BUCKET = "inbody-reports";
 const STORAGE_SETUP_HINT =
-  "Run `pnpm --filter @workspace/api-server run setup-storage` or create the Supabase Storage bucket `inbody-reports`.";
+  "Run `pnpm setup-storage` to create the Supabase Storage bucket 'inbody-reports', or create it manually in the Supabase dashboard.";
 
-// ─── Upload to Supabase Storage ───────────────────────────────────────────────
+// ─── Upload to Supabase Storage (with retry) ─────────────────────────────────
 export async function uploadToStorage(
   fileBuffer: Buffer,
   mimeType: string,
   userId: string,
   fileName: string,
 ): Promise<string> {
+  const supabaseUrl = process.env.SUPABASE_URL ?? "";
+
+  // Fail fast with a clear message if SUPABASE_URL is missing
+  if (!supabaseUrl || supabaseUrl.includes("placeholder")) {
+    throw new Error(
+      "SUPABASE_URL is not configured. Add it to your .env file.",
+    );
+  }
+
   const ext = mimeType.includes("pdf") ? "pdf" : mimeType.split("/")[1] ?? "jpg";
   const storagePath = `${userId}/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}.${ext}`;
 
-  const { error } = await storageClient.storage
-    .from(BUCKET)
-    .upload(storagePath, fileBuffer, {
-      contentType: mimeType,
-      upsert: false,
-    });
+  const MAX_ATTEMPTS = 3;
+  let lastError: Error | undefined;
 
-  if (error) {
-    logger.error({ error: error.message }, "Supabase Storage upload failed");
-    if (error.message.toLowerCase().includes("bucket not found")) {
-      throw new Error(`Storage bucket '${BUCKET}' was not found. ${STORAGE_SETUP_HINT}`);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      logger.debug(
+        { attempt, supabaseUrl, bucket: BUCKET, storagePath },
+        "Attempting Supabase Storage upload",
+      );
+
+      const { error } = await storageClient.storage
+        .from(BUCKET)
+        .upload(storagePath, fileBuffer, {
+          contentType: mimeType,
+          upsert: false,
+        });
+
+      if (error) {
+        // Supabase returns errors as objects, not thrown exceptions
+        const msg = error.message ?? String(error);
+        logger.warn({ attempt, error: msg }, "Supabase Storage returned an error");
+
+        if (msg.toLowerCase().includes("bucket not found")) {
+          throw new Error(`Storage bucket '${BUCKET}' was not found. ${STORAGE_SETUP_HINT}`);
+        }
+        if (msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("invalid token")) {
+          throw new Error(
+            `Storage auth failed: check SUPABASE_SERVICE_ROLE_KEY in your .env. Details: ${msg}`,
+          );
+        }
+        throw new Error(`Storage upload failed (attempt ${attempt}): ${msg}`);
+      }
+
+      // Success — build public URL
+      const { data: urlData } = storageClient.storage
+        .from(BUCKET)
+        .getPublicUrl(storagePath);
+
+      logger.info({ storagePath, url: urlData.publicUrl }, "Storage upload succeeded");
+      return urlData.publicUrl;
+
+    } catch (err: any) {
+      lastError = err;
+
+      // Deep-inspect fetch errors (Node.js wraps the real cause)
+      const cause = err?.cause;
+      const rootMsg = cause?.message ?? cause?.code ?? "unknown";
+      logger.error(
+        {
+          attempt,
+          maxAttempts: MAX_ATTEMPTS,
+          err: err.message,
+          rootCause: rootMsg,
+          supabaseUrl,
+        },
+        "Supabase Storage upload failed",
+      );
+
+      // Don't retry auth/config errors — they won't fix themselves
+      const isFatal =
+        err.message?.includes("not configured") ||
+        err.message?.includes("bucket") ||
+        err.message?.includes("auth failed") ||
+        err.message?.includes("unauthorized");
+
+      if (isFatal || attempt === MAX_ATTEMPTS) break;
+
+      // Exponential back-off: 500ms, 1000ms
+      const delay = attempt * 500;
+      logger.info({ delay }, "Retrying storage upload after delay");
+      await new Promise((r) => setTimeout(r, delay));
     }
-    throw new Error(`Storage upload failed: ${error.message}`);
   }
 
-  const { data: urlData } = storageClient.storage
-    .from(BUCKET)
-    .getPublicUrl(storagePath);
-
-  return urlData.publicUrl;
+  throw lastError ?? new Error("Storage upload failed after all attempts");
 }
 
 // ─── Groq Vision Extraction ────────────────────────────────────────────────────
