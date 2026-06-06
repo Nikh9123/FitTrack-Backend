@@ -6,7 +6,7 @@ import { getSupabaseClient } from "./supabase-config";
 import { eq } from "drizzle-orm";
 import type { User, UserProfile } from "../db";
 import { logger } from "./logger";
-import { WebSocket } from "ws";
+// import { WebSocket } from "ws";
 
 export { logger };
 
