@@ -6,6 +6,8 @@ import workoutOnboardingRouter from "./workout-onboarding";
 import progressRouter from "./progress";
 import workoutsRouter from "./workouts";
 import dietRouter from "./diet";
+import motivationRouter from "./motivation";
+import chatRouter from "./chat";
 
 const router: IRouter = Router();
 
@@ -16,5 +18,7 @@ router.use(workoutOnboardingRouter);
 router.use(progressRouter);
 router.use(workoutsRouter);
 router.use(dietRouter);
+router.use(motivationRouter);
+router.use(chatRouter);
 
 export default router;

@@ -42,7 +42,7 @@ const storageClient = createClient(
       fetch: (url, options) => fetch(url, options),
     },
     realtime: {
-      transport: WebSocket,
+      // transport: WebSocket,
     }
   }
 );

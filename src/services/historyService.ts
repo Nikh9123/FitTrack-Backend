@@ -284,12 +284,67 @@ export async function getHistoryInsights(userId: string, period: HistoryPeriod =
     if (Math.abs(pct) >= 8) {
       insights.push({
         id: "calories",
-        metric: "nutrition",
+        metric: "calories",
         trend: pct > 0 ? "up" : "down",
         message:
           pct > 0
             ? `Calorie intake is up ${pct}% vs last period.`
             : `You're eating ${Math.abs(pct)}% fewer calories than last period.`,
+      });
+    }
+  }
+
+  const [prevWater] = await db
+    .select({
+      ml: sql<number>`coalesce(sum(${waterLogs.amountMl}), 0)`.mapWith(Number),
+    })
+    .from(waterLogs)
+    .where(and(eq(waterLogs.userId, userId), gte(waterLogs.logDate, prevStart), lte(waterLogs.logDate, prevEnd)));
+
+  const prevWaterGlasses = Math.round((prevWater?.ml ?? 0) / ML_PER_GLASS);
+  const curWater = current.totals.waterGlasses;
+  if (prevWaterGlasses > 0 && curWater > 0) {
+    const pct = Math.round(((curWater - prevWaterGlasses) / prevWaterGlasses) * 100);
+    if (Math.abs(pct) >= 8) {
+      insights.push({
+        id: "water",
+        metric: "water",
+        trend: pct > 0 ? "up" : "down",
+        message:
+          pct > 0
+            ? `Hydration is up ${pct}% vs the previous ${days} days — nice work!`
+            : `Water intake is ${Math.abs(pct)}% lower than the previous ${days} days.`,
+      });
+    }
+  }
+
+  const [prevSleep] = await db
+    .select({
+      avgHours: sql<number>`coalesce(avg(${dailyCheckins.sleepHours}::numeric), 0)`.mapWith(Number),
+    })
+    .from(dailyCheckins)
+    .where(
+      and(
+        eq(dailyCheckins.userId, userId),
+        gte(dailyCheckins.checkinDate, prevStart),
+        lte(dailyCheckins.checkinDate, prevEnd),
+        sql`${dailyCheckins.sleepHours} IS NOT NULL`,
+      ),
+    );
+
+  const prevSleepAvg = Math.round((prevSleep?.avgHours ?? 0) * 10) / 10;
+  const curSleepAvg = current.averages.sleepHours;
+  if (prevSleepAvg > 0 && curSleepAvg > 0) {
+    const diff = Math.round((curSleepAvg - prevSleepAvg) * 10) / 10;
+    if (Math.abs(diff) >= 0.3) {
+      insights.push({
+        id: "sleep-trend",
+        metric: "sleep",
+        trend: diff > 0 ? "up" : "down",
+        message:
+          diff > 0
+            ? `Sleep averaged ${curSleepAvg}h — up ${diff}h vs the previous ${days} days.`
+            : `Sleep averaged ${curSleepAvg}h — ${Math.abs(diff)}h less than the previous ${days} days.`,
       });
     }
   }
@@ -311,7 +366,7 @@ export async function getHistoryInsights(userId: string, period: HistoryPeriod =
 
   if (current.averages.sleepHours > 0 && current.averages.sleepHours < 6.5) {
     insights.push({
-      id: "sleep",
+      id: "sleep-low",
       metric: "sleep",
       trend: "down",
       message: `Average sleep is ${current.averages.sleepHours}h — aim for 7–8h for recovery.`,
