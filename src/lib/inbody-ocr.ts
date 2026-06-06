@@ -23,6 +23,7 @@ import {
   normalizeOCRText,
   type ExtractedInBodyMetrics,
 } from "./inbody-parser";
+import { WebSocket } from "ws";
 
 // ─── Supabase Storage client ──────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL ?? "";
@@ -32,6 +33,18 @@ const SUPABASE_SERVICE_ROLE_KEY =
 const storageClient = createClient(
   SUPABASE_URL || "https://placeholder.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY || "placeholder-service-key",
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    },
+    global: {
+      fetch: (url, options) => fetch(url, options),
+    },
+    realtime: {
+      transport: WebSocket,
+    }
+  }
 );
 
 const BUCKET = "inbody-reports";
