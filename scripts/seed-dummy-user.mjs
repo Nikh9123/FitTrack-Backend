@@ -288,13 +288,7 @@ async function seedInbodyReports(pool, userId) {
         `dummy-inbody-${scan.daysAgo}.jpg`,
         `Dummy InBody scan ${scan.daysAgo}d ago`,
         JSON.stringify(scan.metrics),
-        JSON.stringify({
-          inbodyScore: String(scan.score),
-          overallSummary: "Dummy InBody analysis for testing.",
-          fitnessLevel: scan.score >= 70 ? "Good" : "Fair",
-          strengths: ["Consistent logging", "Improving muscle mass"],
-          recommendations: ["Keep protein high", "Walk 8k+ steps daily"],
-        }),
+        null,
         createdAt,
       ],
     );

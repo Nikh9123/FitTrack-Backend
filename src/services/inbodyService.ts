@@ -305,7 +305,7 @@ export async function createEstimatedReport(
   };
 }
 
-/** Re-run AI analysis on an already-uploaded report. */
+/** Re-run AI analysis on an already-uploaded report and persist results. */
 export async function reanalyzeReport(
   reportId: string,
   userId: string,
@@ -321,7 +321,47 @@ export async function reanalyzeReport(
   if (!report.extractedMetrics) throw { code: "NO_METRICS" };
 
   const metrics = report.extractedMetrics as Record<string, string>;
-  return analyzeWithGemini(metrics);
+  const rawText = report.extractedText ?? "";
+
+  const [profile] = await db
+    .select({
+      gender: userProfiles.gender,
+      heightCm: userProfiles.heightCm,
+      dateOfBirth: userProfiles.dateOfBirth,
+      fitnessGoal: userProfiles.fitnessGoal,
+    })
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId))
+    .limit(1);
+
+  let age: number | undefined;
+  if (metrics.age) {
+    age = parseInt(metrics.age, 10);
+  } else if (profile?.dateOfBirth) {
+    const dob = new Date(profile.dateOfBirth);
+    age = new Date().getFullYear() - dob.getFullYear();
+  }
+
+  const userProfile = {
+    age,
+    gender: metrics.gender ?? profile?.gender ?? undefined,
+    height: metrics.height ?? (profile?.heightCm ? String(profile.heightCm) : undefined),
+    fitnessGoal: profile?.fitnessGoal ?? undefined,
+  };
+
+  const geminiAnalysis = await analyzeWithGemini(metrics, userProfile, rawText);
+
+  await db
+    .update(inbodyReports)
+    .set({
+      geminiAnalysis,
+      updatedAt: new Date(),
+    })
+    .where(eq(inbodyReports.id, reportId));
+
+  logger.info({ reportId, userId, source: geminiAnalysis.__aiSource }, "InBody AI analysis persisted");
+
+  return geminiAnalysis;
 }
 
 /** Return all reports for a user, newest first. */

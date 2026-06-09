@@ -13,13 +13,15 @@ export interface DailyActivityInput {
 }
 
 function dayBounds(dateInput: string) {
-  const dayStart = new Date(dateInput);
-  if (Number.isNaN(dayStart.getTime())) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateInput);
+  if (!match) {
     throw new Error("Invalid summaryDate");
   }
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setHours(23, 59, 59, 999);
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  const dayStart = new Date(y, m - 1, d, 0, 0, 0, 0);
+  const dayEnd = new Date(y, m - 1, d, 23, 59, 59, 999);
   return { dayStart, dayEnd };
 }
 

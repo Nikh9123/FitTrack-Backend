@@ -231,6 +231,282 @@ export async function getUnifiedHistory(userId: string, period: HistoryPeriod = 
   };
 }
 
+/** Aggregated history for an explicit calendar range (inclusive, local dates). */
+export async function getHistoryForDateRange(userId: string, rangeStart: Date, rangeEnd: Date) {
+  const start = new Date(rangeStart);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(rangeEnd);
+  end.setHours(23, 59, 59, 999);
+
+  const keys: string[] = [];
+  const cursor = new Date(start);
+  cursor.setHours(12, 0, 0, 0);
+  while (cursor.getTime() <= end.getTime()) {
+    keys.push(toLocalDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const days = keys.length;
+  const bucketMap = new Map(keys.map((k) => [k, emptyBucket(k)]));
+
+  const [activityRows, dietRows, waterRows, weightRows, checkinRows] = await Promise.all([
+    db
+      .select({
+        summaryDate: activitySummaries.summaryDate,
+        steps: activitySummaries.steps,
+        caloriesBurned: activitySummaries.caloriesBurned,
+        sleepMinutes: activitySummaries.sleepMinutes,
+      })
+      .from(activitySummaries)
+      .where(and(eq(activitySummaries.userId, userId), gte(activitySummaries.summaryDate, start), lte(activitySummaries.summaryDate, end))),
+    db
+      .select({
+        logDate: dietLogs.logDate,
+        caloriesKcal: dietLogs.caloriesKcal,
+        proteinG: dietLogs.proteinG,
+      })
+      .from(dietLogs)
+      .where(and(eq(dietLogs.userId, userId), gte(dietLogs.logDate, start), lte(dietLogs.logDate, end))),
+    db
+      .select({
+        logDate: waterLogs.logDate,
+        amountMl: waterLogs.amountMl,
+      })
+      .from(waterLogs)
+      .where(and(eq(waterLogs.userId, userId), gte(waterLogs.logDate, start), lte(waterLogs.logDate, end))),
+    db
+      .select({
+        recordedAt: weightLogs.recordedAt,
+        weightKg: weightLogs.weightKg,
+      })
+      .from(weightLogs)
+      .where(
+        and(
+          eq(weightLogs.userId, userId),
+          gte(weightLogs.recordedAt, start),
+          lte(weightLogs.recordedAt, end),
+          or(isNull(weightLogs.notes), ne(weightLogs.notes, "fittrack_demo_seed")),
+        ),
+      ),
+    db
+      .select({
+        checkinDate: dailyCheckins.checkinDate,
+        sleepHours: dailyCheckins.sleepHours,
+      })
+      .from(dailyCheckins)
+      .where(and(eq(dailyCheckins.userId, userId), gte(dailyCheckins.checkinDate, start), lte(dailyCheckins.checkinDate, end))),
+  ]);
+
+  for (const row of activityRows) {
+    const key = toLocalDateKey(new Date(row.summaryDate));
+    const b = bucketMap.get(key);
+    if (!b) continue;
+    b.steps += row.steps ?? 0;
+    b.caloriesBurned += row.caloriesBurned ?? 0;
+    if ((row.sleepMinutes ?? 0) > 0) {
+      b.sleepHours = Math.round((row.sleepMinutes / 60) * 10) / 10;
+    }
+  }
+
+  for (const row of dietRows) {
+    const key = toLocalDateKey(new Date(row.logDate));
+    const b = bucketMap.get(key);
+    if (!b) continue;
+    b.caloriesConsumed += parseFloat(String(row.caloriesKcal ?? 0));
+    b.proteinG += parseFloat(String(row.proteinG ?? 0));
+  }
+
+  for (const row of waterRows) {
+    const key = toLocalDateKey(new Date(row.logDate));
+    const b = bucketMap.get(key);
+    if (!b) continue;
+    b.waterMl += row.amountMl ?? 0;
+    b.waterGlasses = Math.round(b.waterMl / ML_PER_GLASS);
+  }
+
+  for (const row of checkinRows) {
+    const key = toLocalDateKey(new Date(row.checkinDate));
+    const b = bucketMap.get(key);
+    if (!b) continue;
+    const sleep = parseFloat(String(row.sleepHours ?? 0));
+    if (sleep > 0 && b.sleepHours === 0) b.sleepHours = sleep;
+  }
+
+  for (const row of weightRows) {
+    const key = toLocalDateKey(new Date(row.recordedAt));
+    const b = bucketMap.get(key);
+    if (!b) continue;
+    b.weightKg = parseFloat(String(row.weightKg));
+  }
+
+  const buckets = keys.map((k) => bucketMap.get(k)!);
+
+  const totals = buckets.reduce(
+    (acc, b) => ({
+      steps: acc.steps + b.steps,
+      caloriesBurned: acc.caloriesBurned + b.caloriesBurned,
+      caloriesConsumed: acc.caloriesConsumed + b.caloriesConsumed,
+      waterGlasses: acc.waterGlasses + b.waterGlasses,
+      proteinG: acc.proteinG + b.proteinG,
+      daysWithSteps: acc.daysWithSteps + (b.steps > 0 ? 1 : 0),
+      daysWithMeals: acc.daysWithMeals + (b.caloriesConsumed > 0 ? 1 : 0),
+    }),
+    { steps: 0, caloriesBurned: 0, caloriesConsumed: 0, waterGlasses: 0, proteinG: 0, daysWithSteps: 0, daysWithMeals: 0 },
+  );
+
+  const sleepDays = buckets.filter((b) => b.sleepHours > 0);
+
+  return {
+    days,
+    buckets,
+    totals,
+    averages: {
+      steps: days > 0 ? Math.round(totals.steps / days) : 0,
+      caloriesBurned: days > 0 ? Math.round(totals.caloriesBurned / days) : 0,
+      caloriesConsumed: totals.daysWithMeals > 0 ? Math.round(totals.caloriesConsumed / totals.daysWithMeals) : 0,
+      waterGlasses: days > 0 ? Math.round(totals.waterGlasses / days) : 0,
+      proteinG: totals.daysWithMeals > 0 ? Math.round(totals.proteinG / totals.daysWithMeals) : 0,
+      sleepHours:
+        sleepDays.length > 0
+          ? Math.round((sleepDays.reduce((s, b) => s + b.sleepHours, 0) / sleepDays.length) * 10) / 10
+          : 0,
+    },
+  };
+}
+
+export interface EnergyBalanceMetrics {
+  bmrDaily: number;
+  estimatedTdee: number;
+  currentWeightKg: number | null;
+  averages: {
+    caloriesConsumed: number;
+    activityBurn: number;
+    workoutBurn: number;
+    totalExpenditure: number;
+    netEnergyBalance: number;
+  };
+  daysWithMeals: number;
+  daysTracked: number;
+}
+
+/** BMR + activity + workout burn vs logged intake — used for coach forecasts (live, not stored). */
+export async function getEnergyBalanceMetrics(
+  userId: string,
+  rangeStart: Date,
+  rangeEnd: Date,
+): Promise<EnergyBalanceMetrics> {
+  const history = await getHistoryForDateRange(userId, rangeStart, rangeEnd);
+  const start = new Date(rangeStart);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(rangeEnd);
+  end.setHours(23, 59, 59, 999);
+
+  const [profileRow, workoutRows] = await Promise.all([
+    db
+      .select({
+        weightKg: userProfiles.weightKg,
+        heightCm: userProfiles.heightCm,
+        gender: userProfiles.gender,
+        dateOfBirth: userProfiles.dateOfBirth,
+        onboardingData: userProfiles.onboardingData,
+      })
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1),
+    db
+      .select({
+        completedAt: userWorkoutSessions.completedAt,
+        startedAt: userWorkoutSessions.startedAt,
+        caloriesBurned: userWorkoutSessions.caloriesBurned,
+      })
+      .from(userWorkoutSessions)
+      .where(
+        and(
+          eq(userWorkoutSessions.userId, userId),
+          or(
+            and(gte(userWorkoutSessions.completedAt, start), lte(userWorkoutSessions.completedAt, end)),
+            and(
+              isNull(userWorkoutSessions.completedAt),
+              gte(userWorkoutSessions.startedAt, start),
+              lte(userWorkoutSessions.startedAt, end),
+            ),
+          ),
+        ),
+      ),
+  ]);
+
+  const profile = profileRow[0];
+  const profileWeight = parseWeightKg(profile?.weightKg);
+  const latestLoggedWeight = [...history.buckets].reverse().find((b) => b.weightKg != null)?.weightKg ?? null;
+  const currentWeightKg = latestLoggedWeight ?? profileWeight;
+
+  const bmrDaily = await resolveUserBmr(userId, currentWeightKg ?? 70);
+
+  const activityLevelRaw = (profile?.onboardingData as Record<string, unknown> | null)?.activityLevel;
+  const activityMultiplier =
+    activityLevelRaw === "sedentary"
+      ? 1.2
+      : activityLevelRaw === "light"
+        ? 1.375
+        : activityLevelRaw === "active"
+          ? 1.725
+          : activityLevelRaw === "very_active"
+            ? 1.9
+            : 1.55;
+  const estimatedTdee = Math.round(bmrDaily * activityMultiplier);
+
+  const workoutByDay = new Map<string, number>();
+  for (const row of workoutRows) {
+    const when = row.completedAt ?? row.startedAt;
+    if (!when) continue;
+    const key = toLocalDateKey(new Date(when));
+    workoutByDay.set(key, (workoutByDay.get(key) ?? 0) + (row.caloriesBurned ?? 0));
+  }
+
+  let totalConsumed = 0;
+  let mealDays = 0;
+  let totalActivity = 0;
+  let totalWorkout = 0;
+  let totalExpenditure = 0;
+  let totalNet = 0;
+  let trackedDays = 0;
+
+  for (const bucket of history.buckets) {
+    const activity = bucket.caloriesBurned;
+    const workout = workoutByDay.get(bucket.date) ?? 0;
+    const consumed = bucket.caloriesConsumed;
+    const hasData = consumed > 0 || activity > 0 || workout > 0;
+
+    if (!hasData) continue;
+
+    trackedDays += 1;
+    const expenditure = bmrDaily + activity + workout;
+    totalActivity += activity;
+    totalWorkout += workout;
+    totalExpenditure += expenditure;
+    totalConsumed += consumed;
+    totalNet += expenditure - consumed;
+    if (consumed > 0) mealDays += 1;
+  }
+
+  const divisor = Math.max(trackedDays, 1);
+
+  return {
+    bmrDaily,
+    estimatedTdee,
+    currentWeightKg,
+    averages: {
+      caloriesConsumed: mealDays > 0 ? Math.round(totalConsumed / mealDays) : 0,
+      activityBurn: Math.round(totalActivity / divisor),
+      workoutBurn: Math.round(totalWorkout / divisor),
+      totalExpenditure: Math.round(totalExpenditure / divisor),
+      netEnergyBalance: Math.round(totalNet / divisor),
+    },
+    daysWithMeals: mealDays,
+    daysTracked: trackedDays,
+  };
+}
+
 export async function getHistoryInsights(userId: string, period: HistoryPeriod = "7d"): Promise<HistoryInsight[]> {
   const days = periodToDays(period);
   const current = await getUnifiedHistory(userId, period);

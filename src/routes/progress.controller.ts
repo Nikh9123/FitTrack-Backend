@@ -6,12 +6,17 @@
  */
 
 import type { Response } from "express";
-import { db, weightLogs, inbodyReports, userStreaks, userAchievements, achievementDefinitions, dailyCheckins, activitySummaries } from "../db";
+import { db, weightLogs, inbodyReports, userAchievements, achievementDefinitions, dailyCheckins, activitySummaries } from "../db";
 import { eq, desc, gte, and, lte } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import type { AuthenticatedRequest } from "../lib/auth";
 import Groq from "groq-sdk";
 import { upsertDailyActivitySummary, upsertSleepMinutes } from "../services/activityService";
+import {
+  evaluateAchievements,
+  syncCheckinStreak,
+} from "../services/achievementService";
+import { getWorkoutStreakStats } from "../services/streakSyncService";
 import {
   getHistoryInsights,
   getUnifiedHistory,
@@ -152,7 +157,7 @@ function computeFitnessScore(params: {
 export async function getProgressDashboard(req: AuthenticatedRequest, res: Response) {
   const userId = req.auth!.sub;
 
-  const [weightEntries, inbodyHistory, streakRows, achievements, checkinToday, recentActivity] =
+  const [weightEntries, inbodyHistory, streakStats, achievements, checkinToday, recentActivity] =
     await Promise.all([
       safeQuery(() =>
         db.select().from(weightLogs)
@@ -168,9 +173,9 @@ export async function getProgressDashboard(req: AuthenticatedRequest, res: Respo
           .limit(10),
         []
       ),
-      safeQuery(() =>
-        db.select().from(userStreaks).where(eq(userStreaks.userId, userId)).limit(1),
-        []
+      safeQuery(
+        () => getWorkoutStreakStats(userId),
+        { currentStreak: 0, longestStreak: 0 },
       ),
       safeQuery(() =>
         db.select({
@@ -250,7 +255,7 @@ export async function getProgressDashboard(req: AuthenticatedRequest, res: Respo
   };
 
   const fitnessScore = computeFitnessScore({
-    streak: streakRows[0]?.currentStreak ?? 0,
+    streak: streakStats.currentStreak,
     inbodyScore: analysis?.inbodyScore ? parseInt(analysis.inbodyScore) : null,
     recentCheckin: checkinToday[0] ?? null,
     weightEntries: weightEntries.length,
@@ -272,8 +277,8 @@ export async function getProgressDashboard(req: AuthenticatedRequest, res: Respo
     currentMetrics,
     transformationSummary,
     workoutStats: {
-      streak: streakRows[0]?.currentStreak ?? 0,
-      longestStreak: streakRows[0]?.longestStreak ?? 0,
+      streak: streakStats.currentStreak,
+      longestStreak: streakStats.longestStreak,
     },
     fitnessScore,
     achievements,
@@ -336,7 +341,10 @@ export async function saveCheckin(req: AuthenticatedRequest, res: Response) {
       await upsertSleepMinutes(userId, dateKey, parseFloat(String(sleepHours)));
     }
 
-    return res.json({ success: true, checkin: saved ?? null });
+    await syncCheckinStreak(userId);
+    const newlyUnlocked = await evaluateAchievements(userId, "checkin");
+
+    return res.json({ success: true, checkin: saved ?? null, newlyUnlocked });
   } catch (err: any) {
     logger.error({ err: err.message }, "saveCheckin failed");
     return res.status(500).json({ error: "Failed to save check-in" });
@@ -378,7 +386,9 @@ export async function logWeight(req: AuthenticatedRequest, res: Response) {
       notes: notes ?? null,
     }).returning();
 
-    return res.json({ success: true, entry });
+    const newlyUnlocked = await evaluateAchievements(userId, "weight");
+
+    return res.json({ success: true, entry, newlyUnlocked });
   } catch (err: any) {
     logger.error({ err: err.message }, "logWeight failed");
     return res.status(500).json({ error: "Failed to log weight" });
@@ -391,7 +401,7 @@ export async function getAIInsights(req: AuthenticatedRequest, res: Response) {
   const userId = req.auth!.sub;
 
   // Gather context
-  const [latestInbody, recentCheckins, weightEntries, streakRows] = await Promise.all([
+  const [latestInbody, recentCheckins, weightEntries, streakStats] = await Promise.all([
     safeQuery(() =>
       db.select().from(inbodyReports)
         .where(and(eq(inbodyReports.userId, userId), eq(inbodyReports.status, "done")))
@@ -413,14 +423,14 @@ export async function getAIInsights(req: AuthenticatedRequest, res: Response) {
         .limit(10),
       []
     ),
-    safeQuery(() =>
-      db.select().from(userStreaks).where(eq(userStreaks.userId, userId)).limit(1),
-      []
+    safeQuery(
+      () => getWorkoutStreakStats(userId),
+      { currentStreak: 0, longestStreak: 0 },
     ),
   ]);
 
   const m = (latestInbody[0]?.extractedMetrics ?? {}) as Record<string, string>;
-  const streak = streakRows[0]?.currentStreak ?? 0;
+  const streak = streakStats.currentStreak;
   const avgRecovery = recentCheckins.length > 0
     ? recentCheckins.filter(c => c.recoveryScore).reduce((s, c) => s + (c.recoveryScore ?? 0), 0) / recentCheckins.filter(c => c.recoveryScore).length
     : null;
@@ -497,8 +507,11 @@ function buildFallbackInsights(ctx: {
 export async function getFitnessScore(req: AuthenticatedRequest, res: Response) {
   const userId = req.auth!.sub;
 
-  const [streakRows, latestCheckin, weightEntries, achievements] = await Promise.all([
-    safeQuery(() => db.select().from(userStreaks).where(eq(userStreaks.userId, userId)).limit(1), []),
+  const [streakStats, latestCheckin, weightEntries, achievements] = await Promise.all([
+    safeQuery(
+      () => getWorkoutStreakStats(userId),
+      { currentStreak: 0, longestStreak: 0 },
+    ),
     safeQuery(() => {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
@@ -520,7 +533,7 @@ export async function getFitnessScore(req: AuthenticatedRequest, res: Response) 
   ]);
 
   const score = computeFitnessScore({
-    streak: streakRows[0]?.currentStreak ?? 0,
+    streak: streakStats.currentStreak,
     inbodyScore: null,
     recentCheckin: latestCheckin[0] ?? null,
     weightEntries: weightEntries.length,
@@ -575,7 +588,11 @@ export async function syncActivity(req: AuthenticatedRequest, res: Response) {
       rawPayload: rawPayload ?? null,
     });
 
-    return res.json({ success: true, summary });
+    const newlyUnlocked = Number(steps) > 0
+      ? await evaluateAchievements(userId, "steps")
+      : [];
+
+    return res.json({ success: true, summary, newlyUnlocked });
   } catch (err: any) {
     logger.error({ err: err.message, userId }, "syncActivity failed");
     return res.status(500).json({ error: err.message || "Failed to sync activity" });

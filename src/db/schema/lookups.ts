@@ -126,7 +126,15 @@ export const billingCycleType = pgEnum("billing_cycle_type", ["monthly", "quarte
 
 export const variationType = pgEnum("variation_type", ["alternative", "progression", "regression"]);
 
-export const aiRequestType = pgEnum("ai_request_type", ["workout_plan", "diet_plan", "recommendation"]);
+export const aiRequestType = pgEnum("ai_request_type", [
+  "workout_plan",
+  "diet_plan",
+  "recommendation",
+  "coach_daily_digest",
+  "coach_weekly_review",
+  "coach_monthly_review",
+  "coach_forecast",
+]);
 
 export const aiRequestStatus = pgEnum("ai_request_status", ["queued", "processing", "completed", "failed"]);
 

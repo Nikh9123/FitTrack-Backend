@@ -184,7 +184,9 @@ export async function completeSession(req: AuthenticatedRequest, res: Response) 
       totalDuration,
       caloriesBurned,
     );
-    return res.json({ success: true, session });
+    const { evaluateAchievements } = await import("../services/achievementService");
+    const newlyUnlocked = await evaluateAchievements(userId, "workout");
+    return res.json({ success: true, session, newlyUnlocked });
   } catch (err: any) {
     logger.error({ err: err.message, userId }, "Failed to complete workout session");
     return res.status(500).json({ success: false, error: err.message || "Failed to complete workout session" });

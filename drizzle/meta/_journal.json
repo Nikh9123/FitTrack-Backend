@@ -8,6 +8,34 @@
       "when": 1779951236529,
       "tag": "0000_yielding_johnny_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779951236530,
+      "tag": "0001_add_gemini_analysis_to_inbody",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779951236531,
+      "tag": "0002_expand_exercise_library",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779951236532,
+      "tag": "0003_food_catalog_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779951236533,
+      "tag": "0004_coach_ai_request_types",
+      "breakpoints": true
     }
   ]
 }

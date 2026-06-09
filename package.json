@@ -19,6 +19,7 @@
     "db:seed:exercises": "node ./scripts/seed-exercise-catalog.mjs",
     "db:seed:progress": "node ./scripts/seed-progress-demo.mjs",
     "db:seed:dummy": "node ./scripts/seed-dummy-user.mjs",
+    "db:seed:achievements": "node ./scripts/seed-achievements.mjs",
     "db:studio": "drizzle-kit studio --config ./drizzle.config.ts"
   },
   "dependencies": {

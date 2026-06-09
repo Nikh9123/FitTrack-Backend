@@ -146,7 +146,10 @@ export async function createWaterLog(req: AuthenticatedRequest, res: Response) {
   try {
     const log = await logWater(userId, { logDate: logDate ?? todayDateKey(), amountMl: ml });
     const summary = await getDailyWaterSummary(userId, logDate ?? todayDateKey());
-    return res.status(201).json({ success: true, log, summary });
+    const { syncHydrationStreak, evaluateAchievements } = await import("../services/achievementService");
+    await syncHydrationStreak(userId);
+    const newlyUnlocked = await evaluateAchievements(userId, "water");
+    return res.status(201).json({ success: true, log, summary, newlyUnlocked });
   } catch (err: any) {
     logger.error({ err: err.message }, "createWaterLog failed");
     return res.status(400).json({ error: err.message || "Failed to log water" });

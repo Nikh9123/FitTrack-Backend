@@ -659,6 +659,9 @@ async function recalculateActivityInsights(userId: string) {
     }
 
     logger.info({ userId, streak: currentStreak, totalVolume }, "Recalculated activity insights successfully");
+
+    const { syncWorkoutStreakToUserStreaks } = await import("./streakSyncService");
+    await syncWorkoutStreakToUserStreaks(userId, currentStreak);
   } catch (err: any) {
     logger.error({ err: err.message, userId }, "Failed to recalculate activity insights");
   }
