@@ -1,5 +1,5 @@
 /**
- * Creates a fully populated dummy test user for FitTrack.
+ * Creates a fully populated dummy test user for Veera.
  *
  * Run:  npm run db:seed:dummy
  *       npm run db:seed:foods   (first, if food catalog empty)
@@ -47,7 +47,7 @@ async function ensureGym(pool) {
   if (rows[0]) return rows[0].id;
   ({ rows } = await pool.query(
     `INSERT INTO gyms (name, slug, status, timezone, currency)
-     VALUES ('FitTrack', $1, 'active', 'Asia/Kolkata', 'INR')
+     VALUES ('Veera', $1, 'active', 'Asia/Kolkata', 'INR')
      RETURNING id`,
     [slug],
   ));
@@ -134,7 +134,7 @@ async function createUser(pool, passwordHash) {
        $1, 'Demo', 'User', 'male', '1995-06-15', 'email',
        true, '175', '109', '35.6', '30.2',
        'weight_loss', 'moderate', 'vegetarian', 'intermediate', 'south',
-       $2, 'Dummy account for testing all FitTrack features.'
+       $2, 'Dummy account for testing all Veera features.'
      )`,
     [
       userId,

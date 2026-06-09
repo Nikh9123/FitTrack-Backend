@@ -105,7 +105,7 @@ export const JOURNEY_STAGES: JourneyStage[] = [
   { id: "fat_loss_specialist", name: "Fat Loss Specialist", minPoints: 500, description: "Body transformation in progress." },
   { id: "discipline_master", name: "Discipline Master", minPoints: 800, description: "Elite consistency achieved." },
   { id: "elite_athlete", name: "Elite Athlete", minPoints: 1200, description: "Top-tier dedication." },
-  { id: "legend", name: "Legend", minPoints: 2000, description: "The pinnacle of the FitTrack journey." },
+  { id: "legend", name: "Legend", minPoints: 2000, description: "The pinnacle of the Veera journey." },
 ];
 
 const ML_PER_GLASS = 250;

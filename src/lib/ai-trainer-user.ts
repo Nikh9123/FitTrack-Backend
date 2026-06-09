@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, userProfiles, users } from "../db";
 import { logger } from "./logger";
 
-const AI_COACH_EMAIL = "ai-coach@fittrack.internal";
+const AI_COACH_EMAIL = "ai-coach@veera.internal";
 
 let cachedAiCoachUserId: string | null = null;
 
@@ -34,7 +34,7 @@ export async function getAiCoachUserId(): Promise<string> {
 
   await db.insert(userProfiles).values({
     userId: created.id,
-    firstName: "FitTrack",
+    firstName: "Veera",
     lastName: "Coach",
     onboardingCompleted: true,
   });

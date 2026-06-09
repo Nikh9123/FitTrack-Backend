@@ -81,7 +81,7 @@ export async function buildTrainerContext(userId: string): Promise<TrainerContex
   const profile = userRow?.profile;
   const firstName = profile?.firstName ?? "";
   const lastName = profile?.lastName ? ` ${profile.lastName}` : "";
-  const name = `${firstName}${lastName}`.trim() || "FitTrack User";
+  const name = `${firstName}${lastName}`.trim() || "Veera User";
 
   const sleepDays = history.buckets.filter((b) => b.sleepHours > 0);
   const recoveryRows = recentCheckins.filter((c) => c.recoveryScore != null);

@@ -117,7 +117,7 @@ export async function createThread(userId: string, subject?: string): Promise<Ch
       threadId: thread.id,
       senderId: aiCoachUserId,
       messageType: "text",
-      content: `Hi! I'm your FitTrack AI Coach. I can see your workouts, nutrition, sleep, and progress data. Ask me anything about training, recovery, or reaching your goals.`,
+      content: `Hi! I'm your Veera AI Coach. I can see your workouts, nutrition, sleep, and progress data. Ask me anything about training, recovery, or reaching your goals.`,
       status: "sent",
     })
     .returning();

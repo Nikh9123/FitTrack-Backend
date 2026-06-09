@@ -178,7 +178,7 @@ router.post("/auth/google/url", async (req, res) => {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: redirectTo as string || "fittrack://auth/callback",
+      redirectTo: redirectTo as string || "veera://auth/callback",
       queryParams: {
         access_type: "offline",
         prompt: "consent",
@@ -196,7 +196,7 @@ router.post("/auth/google/url", async (req, res) => {
 
 // ─── Google OAuth Callback — exchange Supabase session for app JWT ────────────
 // After Google redirects, the mobile app extracts the access_token from the URL
-// and sends it here to get a FitTrack JWT.
+// and sends it here to get a Veera JWT.
 router.post("/auth/google/callback", async (req, res) => {
   const { accessToken, refreshToken } = req.body;
 

@@ -135,7 +135,7 @@ function formatUser(user: User, profile: UserProfile | null) {
     email: user.email ?? "",
     phone: user.phone ?? "",
     role: user.primaryRole,
-    name: `${firstName}${lastName}`.trim() || "FitTrack User",
+    name: `${firstName}${lastName}`.trim() || "Veera User",
     avatar: profile?.avatarUrl ?? null,
     onboardingCompleted: profile?.onboardingCompleted ?? false,
     fitnessGoal: profile?.fitnessGoal ?? null,

@@ -70,7 +70,7 @@ export async function generateWeeklyReviewNarrative(
   const fallback = buildFallbackNarrative(context);
   if (!groq) return fallback;
 
-  const prompt = `You are FitTrack's AI fitness coach. Narrate a weekly review using ONLY the pre-computed JSON below. Do NOT invent numbers.
+  const prompt = `You are Veera's AI fitness coach. Narrate a weekly review using ONLY the pre-computed JSON below. Do NOT invent numbers.
 
 Return JSON:
 {
@@ -189,7 +189,7 @@ export async function generateDailyDigestNarrative(context: DailyDigestContext):
   const fallback = buildFallbackDailyDigest(context);
   if (!groq) return { ...fallback, source: "fallback" };
 
-  const prompt = `You are FitTrack's AI fitness coach. Write ONE personalized daily tip based on yesterday's data.
+  const prompt = `You are Veera's AI fitness coach. Write ONE personalized daily tip based on yesterday's data.
 Goal: ${context.fitnessGoal ?? "general fitness"}. Streak: ${context.streakDays} days.
 ${context.calorieGoal ? `User's daily calorie target: ${context.calorieGoal} kcal — use this exact number if recommending intake.` : "No calorie target on file — do not invent a specific calorie number."}
 

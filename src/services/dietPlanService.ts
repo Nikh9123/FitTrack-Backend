@@ -133,10 +133,10 @@ async function ensureDefaultGymId(): Promise<string> {
 
   const [created] = await db
     .insert(gyms)
-    .values({ name: "FitTrack", slug, status: "active" })
+    .values({ name: "Veera", slug, status: "active" })
     .returning({ id: gyms.id });
 
-  logger.info({ gymId: created.id }, "Created default FitTrack gym");
+  logger.info({ gymId: created.id }, "Created default Veera gym");
   return created.id;
 }
 

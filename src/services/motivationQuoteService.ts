@@ -16,7 +16,7 @@ async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Respon
       signal: controller.signal,
       headers: {
         Accept: "application/json",
-        "User-Agent": "FitTrack/1.0",
+        "User-Agent": "Veera/1.0",
         ...(init?.headers ?? {}),
       },
     });

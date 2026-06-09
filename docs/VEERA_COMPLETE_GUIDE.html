@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Veera — Complete System & User Guide</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --text: #e8edf4;
+      --text-muted: #94a3b8;
+      --accent: #22c55e;
+      --accent-dim: #16a34a;
+      --border: #334155;
+      --code-bg: #0d1117;
+      --link: #4ade80;
+      --warning: #fbbf24;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      nav.sidebar { position: relative; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    }
+
+    nav.sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.5rem 1rem;
+    }
+
+    nav.sidebar .logo {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+    }
+
+    nav.sidebar .subtitle {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    nav.sidebar ul { list-style: none; }
+    nav.sidebar li { margin-bottom: 0.35rem; }
+    nav.sidebar a {
+      display: block;
+      padding: 0.35rem 0.6rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      border-radius: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    nav.sidebar a:hover { background: var(--surface2); color: var(--text); }
+
+    main {
+      max-width: 900px;
+      padding: 2.5rem 2rem 4rem;
+    }
+
+    @media (max-width: 600px) {
+      main { padding: 1.5rem 1rem 3rem; }
+    }
+
+    .hero {
+      background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .hero h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      color: var(--accent);
+    }
+
+    .hero .meta {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+
+    .hero .tagline {
+      font-size: 1.15rem;
+      color: var(--text);
+    }
+
+    section {
+      margin-bottom: 3rem;
+      scroll-margin-top: 1.5rem;
+    }
+
+    h2 {
+      font-size: 1.5rem;
+      color: var(--accent);
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--border);
+    }
+
+    h3 {
+      font-size: 1.15rem;
+      margin: 1.5rem 0 0.75rem;
+      color: var(--text);
+    }
+
+    p { margin-bottom: 1rem; }
+
+    ul, ol { margin: 0 0 1rem 1.5rem; }
+    li { margin-bottom: 0.4rem; }
+
+    a { color: var(--link); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 1.5rem;
+      font-size: 0.9rem;
+      overflow-x: auto;
+      display: block;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.6rem 0.75rem;
+      text-align: left;
+    }
+
+    th {
+      background: var(--surface2);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+
+    pre, code {
+      font-family: "SF Mono", "Fira Code", Consolas, monospace;
+      font-size: 0.85rem;
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 1rem 0 1.5rem;
+      line-height: 1.5;
+      color: #c9d1d9;
+    }
+
+    code {
+      background: var(--code-bg);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.85em;
+    }
+
+    pre code { background: none; padding: 0; }
+
+    .callout {
+      background: var(--surface);
+      border-left: 4px solid var(--accent);
+      padding: 1rem 1.25rem;
+      margin: 1rem 0 1.5rem;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .callout.warning {
+      border-left-color: var(--warning);
+    }
+
+    .diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin: 1rem 0 1.5rem;
+      font-family: monospace;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      overflow-x: auto;
+      white-space: pre;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge.done { background: #14532d; color: #86efac; }
+    .badge.partial { background: #713f12; color: #fde68a; }
+    .badge.pending { background: #374151; color: #9ca3af; }
+
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    @media print {
+      .layout { display: block; }
+      nav.sidebar { display: none; }
+      body { background: white; color: black; }
+      pre, .diagram { border: 1px solid #ccc; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="logo">Veera</div>
+      <div class="subtitle">Complete System & User Guide v1.0</div>
+      <ul>
+        <li><a href="#intro">1. What Is Veera?</a></li>
+        <li><a href="#audience">2. Who Is It For?</a></li>
+        <li><a href="#problems">3. Problems It Solves</a></li>
+        <li><a href="#journey">4. User Journey</a></li>
+        <li><a href="#features">5. Main Features</a></li>
+        <li><a href="#screens">6. Screens & Navigation</a></li>
+        <li><a href="#overview">7. System Overview</a></li>
+        <li><a href="#architecture">8. Technical Architecture</a></li>
+        <li><a href="#frontend">9. Frontend</a></li>
+        <li><a href="#backend">10. Backend</a></li>
+        <li><a href="#database">11. Database Design</a></li>
+        <li><a href="#ai-coach">12. AI Coach System</a></li>
+        <li><a href="#data-flows">13. Data Flows</a></li>
+        <li><a href="#api">14. API Summary</a></li>
+        <li><a href="#integrations">15. Integrations</a></li>
+        <li><a href="#security">16. Security & Privacy</a></li>
+        <li><a href="#stack">17. Tech Stack</a></li>
+        <li><a href="#structure">18. Project Structure</a></li>
+        <li><a href="#roadmap">19. Status & Roadmap</a></li>
+        <li><a href="#glossary">20. Glossary</a></li>
+      </ul>
+    </nav>
+
+    <main>
+      <header class="hero">
+        <h1>Veera — Complete System & User Guide</h1>
+        <p class="meta">Version 1.0.0 · Last updated June 9, 2026 · For everyone — users, stakeholders, and engineers</p>
+        <p class="tagline">Your personal AI fitness coach — from daily tips to monthly transformation reports.</p>
+      </header>
+
+      <!-- Section 1 -->
+      <section id="intro">
+        <h2>1. What Is Veera? (Plain English)</h2>
+        <p><strong>Veera</strong> is a mobile fitness app that acts as your <strong>personal AI fitness coach</strong>.</p>
+        <p>Instead of only counting calories or logging workouts in isolation, Veera brings together:</p>
+        <ul>
+          <li><strong>What you eat and drink</strong></li>
+          <li><strong>How you move</strong> (steps, workouts, sleep)</li>
+          <li><strong>How your body is changing</strong> (weight, InBody scans, measurements)</li>
+          <li><strong>Your goals</strong> (lose fat, build muscle, stay consistent)</li>
+        </ul>
+        <p>…and turns that into <strong>clear daily tips, weekly reviews, monthly reports, achievements, and chat with an AI coach</strong> that understands <em>your</em> data.</p>
+        <div class="callout">
+          <strong>Product promise:</strong> "Your personal AI fitness coach" — not just a fitness database.<br><br>
+          Think of it as combining ideas from MyFitnessPal (nutrition), Fitbod/Hevy (workouts), WHOOP/Oura (recovery), and Apple Fitness+ (motivation) — with an <strong>AI layer</strong> that reads your progress and tells you what to focus on next.
+        </div>
+      </section>
+
+      <!-- Section 2 -->
+      <section id="audience">
+        <h2>2. Who Is It For?</h2>
+        <table>
+          <thead><tr><th>User type</th><th>How they use Veera</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Gym members</strong></td><td>Log workouts, track diet, upload InBody scans, get AI plans and reviews</td></tr>
+            <tr><td><strong>Fitness beginners</strong></td><td>Guided onboarding, daily score, simple quick actions on Home</td></tr>
+            <tr><td><strong>Serious lifters</strong></td><td>Workout sessions, personal records (PRs), progression suggestions</td></tr>
+            <tr><td><strong>People with InBody access</strong></td><td>Scan/upload reports for clinical-grade body composition analysis</td></tr>
+            <tr><td><strong>Trainers & gym owners</strong> <em>(roadmap)</em></td><td>Member management, scheduling, attendance — schema exists, UI partial</td></tr>
+          </tbody>
+        </table>
+        <p>Veera is especially oriented toward <strong>Indian gym-goers</strong> (regional diet options, local food logging) but works for anyone tracking fitness holistically.</p>
+      </section>
+
+      <!-- Section 3 -->
+      <section id="problems">
+        <h2>3. Problems Veera Solves</h2>
+        <table>
+          <thead><tr><th>Problem</th><th>Veera's answer</th></tr></thead>
+          <tbody>
+            <tr><td>"I log data but don't know what it means"</td><td>AI weekly/monthly reviews + daily coach tip</td></tr>
+            <tr><td>"I lose motivation after a few weeks"</td><td>Streaks, achievements, journey map, fitness score</td></tr>
+            <tr><td>"My gym gives me InBody printouts I never use"</td><td>Upload scan → AI explains body fat, muscle, visceral fat, recommendations</td></tr>
+            <tr><td>"I don't know what to eat or how to train"</td><td>AI diet plans, AI workout plans from InBody + goals</td></tr>
+            <tr><td>"Too many apps for diet, gym, and progress"</td><td>One app: Home, Workout, Diet, Progress, AI Coach</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Section 4 -->
+      <section id="journey">
+        <h2>4. How the App Works — User Journey</h2>
+        <h3>First time opening the app</h3>
+        <pre>Open app → Onboarding slides → Sign up / Log in → Profile setup (goal, height, weight)
+→ Land on Home tab</pre>
+
+        <h3>A typical day</h3>
+        <ol>
+          <li><strong>Morning</strong> — Open Home: see Daily Score, coach tip, step/calorie/water rings.</li>
+          <li><strong>During the day</strong> — Log meals (Diet tab), water, steps sync automatically if enabled.</li>
+          <li><strong>At the gym</strong> — Start workout from Workout tab, log sets/reps, complete session.</li>
+          <li><strong>Evening</strong> — Check Progress tab for fitness score, journal charts, achievements.</li>
+          <li><strong>Weekly</strong> — Open Weekly Review for AI summary of the week.</li>
+        </ol>
+
+        <h3>InBody journey</h3>
+        <pre>InBody screen → Upload photo/PDF or estimate from measurements
+→ App reads numbers (OCR) → AI writes full analysis
+→ Results feed workout plans, progress charts, transformation timeline</pre>
+      </section>
+
+      <!-- Section 5 -->
+      <section id="features">
+        <h2>5. Main Features Explained Simply</h2>
+
+        <h3>Home</h3>
+        <p>Your <strong>command center</strong>. Shows greeting, streak, daily score (0–100), coach tip of the day, quick actions (meal, water, weight, train), activity rings, today's workout, weight trend, and activity timeline.</p>
+
+        <h3>Workout</h3>
+        <p>Your <strong>training hub</strong>. AI-generated or manual workout plans, live session logging, rest timer, personal records, workout streak, and progression insights.</p>
+
+        <h3>Diet</h3>
+        <p><strong>Food and hydration tracking</strong>. Log meals, see calories/macros vs goals, AI-generated diet plans based on your profile and InBody data.</p>
+
+        <h3>Progress</h3>
+        <p>Your <strong>results dashboard</strong>. Fitness score breakdown, fitness journal (steps/calories/sleep/weight charts), transformation summary from InBody, achievements grid, journey map link, AI insights, weekly review banner.</p>
+
+        <h3>Analysis</h3>
+        <p><strong>Body composition focus</strong>. InBody reports, radar-style fitness dimensions, trends from scans.</p>
+
+        <h3>AI Coach (Trainer tab)</h3>
+        <p><strong>Chat with your coach</strong>. Ask questions; the AI uses your profile, recent logs, and (when wired) latest reviews as context. Replies powered by Groq LLM.</p>
+
+        <h3>Coach Reports</h3>
+        <ul>
+          <li><strong>Daily digest</strong> — One tip + one focus action on Home (refreshes each day).</li>
+          <li><strong>Weekly review</strong> — Score, activity breakdown, AI narrative, forecasts, shareable card.</li>
+          <li><strong>Monthly report</strong> — Longer-horizon analysis, transformation timeline, next-month goals.</li>
+        </ul>
+
+        <h3>Achievements & Journey</h3>
+        <p><strong>Gamification</strong>. Badges for streaks, workouts, weight milestones. Journey screen shows stages and unlockable titles.</p>
+
+        <h3>Gym <em>(partial)</em></h3>
+        <p>Membership, attendance, trainer booking — backend schema ready; member-facing UI evolving.</p>
+      </section>
+
+      <!-- Section 6 -->
+      <section id="screens">
+        <h2>6. App Screens & Navigation</h2>
+        <h3>Bottom tabs (main navigation)</h3>
+        <table>
+          <thead><tr><th>Tab</th><th>Route</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>Home</td><td><code>/(tabs)/index</code></td><td>Daily overview</td></tr>
+            <tr><td>Analysis</td><td><code>/(tabs)/analysis</code></td><td>Body comp analytics</td></tr>
+            <tr><td>Workout</td><td><code>/(tabs)/workout</code></td><td>Training</td></tr>
+            <tr><td>Progress</td><td><code>/(tabs)/progress</code></td><td>Scores, journal, achievements</td></tr>
+            <tr><td>Profile</td><td><code>/(tabs)/profile</code></td><td>Settings, profile, achievements</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Hidden routes (linked from other screens)</h3>
+        <table>
+          <thead><tr><th>Screen</th><th>Route</th></tr></thead>
+          <tbody>
+            <tr><td>Diet</td><td><code>/(tabs)/diet</code></td></tr>
+            <tr><td>AI Coach chat</td><td><code>/(tabs)/trainer</code></td></tr>
+            <tr><td>Gym</td><td><code>/(tabs)/gym</code></td></tr>
+          </tbody>
+        </table>
+
+        <h3>Deep links / stack screens</h3>
+        <table>
+          <thead><tr><th>Area</th><th>Examples</th></tr></thead>
+          <tbody>
+            <tr><td>Auth</td><td><code>/login</code>, <code>/setup</code>, <code>/onboarding</code></td></tr>
+            <tr><td>InBody</td><td><code>/inbody</code>, <code>/inbody/measurement-wizard</code></td></tr>
+            <tr><td>Coach</td><td><code>/coach/weekly-review</code>, <code>/coach/monthly-report</code>, <code>/coach/journey</code></td></tr>
+            <tr><td>Workout</td><td><code>/workout/ai-onboarding</code>, <code>/workout/weekly-plan</code></td></tr>
+            <tr><td>Diet</td><td><code>/diet/my-plan</code></td></tr>
+            <tr><td>Metrics</td><td><code>/metrics/weight</code>, <code>/metrics/steps</code>, <code>/metrics/sleep</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Section 7 -->
+      <section id="overview">
+        <h2>7. System Overview (Big Picture)</h2>
+        <p>Veera is a <strong>client–server</strong> application:</p>
+        <div class="diagram">┌─────────────────┐         HTTPS / JSON          ┌─────────────────┐
+│  Mobile App     │  ◄──────────────────────────► │  Backend API    │
+│  (Expo/RN)      │         JWT Auth              │  (Express/TS)   │
+└─────────────────┘                               └────────┬────────┘
+                                                           │
+                  ┌────────────────────────────────────────┼────────────────────┐
+                  ▼                    ▼                   ▼                    ▼
+           ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+           │ PostgreSQL   │   │ Supabase     │   │ Groq AI      │   │ OCR / Vision │
+           │ (Supabase)   │   │ Storage      │   │ (LLM)        │   │ (InBody)     │
+           └──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘</div>
+        <p><strong>In one sentence:</strong> The phone app collects and displays data; the server stores it, runs business logic, and calls AI services when you need analysis or coaching.</p>
+      </section>
+
+      <!-- Section 8 -->
+      <section id="architecture">
+        <h2>8. Technical Architecture</h2>
+        <h3>Architectural style</h3>
+        <ul>
+          <li><strong>Monorepo-style workspace:</strong> <code>Veera-Frontend/</code> + <code>Veera-backend/</code></li>
+          <li><strong>REST API</strong> over HTTP (JSON bodies, JWT bearer tokens)</li>
+          <li><strong>Single PostgreSQL database</strong> (no microservices yet)</li>
+          <li><strong>Service layer</strong> on backend — routes are thin, services hold business logic</li>
+          <li><strong>Context + hooks</strong> on frontend — shared state (auth, fitness, achievements)</li>
+        </ul>
+
+        <h3>Layered backend</h3>
+        <pre>HTTP Request
+    → Route (Express router)
+    → Controller (validation, HTTP codes)
+    → Service (business logic)
+    → Drizzle ORM → PostgreSQL
+    → Optional: Groq / Supabase Storage / external APIs</pre>
+
+        <h3>Layered frontend</h3>
+        <pre>Screen (app/*.tsx)
+    → Components (components/*)
+    → Hooks (hooks/*) + Context (context/*)
+    → API clients (lib/*-api.ts)
+    → Backend REST API</pre>
+
+        <h3>Design principles</h3>
+        <ol>
+          <li><strong>One source of truth</strong> — Server DB for persistent data; AsyncStorage for auth token cache only.</li>
+          <li><strong>Reuse over duplicate</strong> — Coach reviews reuse <code>historyService</code>, not separate tables.</li>
+          <li><strong>AI with fallback</strong> — If Groq is unavailable, rule-based narratives still work.</li>
+          <li><strong>Premium UX</strong> — Rings, gradients, motion, achievements — without changing information architecture.</li>
+        </ol>
+      </section>
+
+      <!-- Section 9 -->
+      <section id="frontend">
+        <h2>9. Frontend Architecture</h2>
+        <table>
+          <thead><tr><th>Item</th><th>Detail</th></tr></thead>
+          <tbody>
+            <tr><td>Framework</td><td>Expo 54 + React Native 0.81 + React 19</td></tr>
+            <tr><td>Routing</td><td>Expo Router 6 (file-based, <code>app/</code> directory)</td></tr>
+            <tr><td>State</td><td>React Context (Auth, Fitness, AchievementUnlock)</td></tr>
+            <tr><td>Animation</td><td>React Native Reanimated 4</td></tr>
+            <tr><td>Styling</td><td>StyleSheet + theme via <code>useColors()</code></td></tr>
+            <tr><td>API base</td><td><code>lib/api.ts</code> → <code>EXPO_PUBLIC_API_URL</code></td></tr>
+          </tbody>
+        </table>
+
+        <h3>Key frontend folders</h3>
+        <table>
+          <thead><tr><th>Folder</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr><td><code>app/</code></td><td>All screens (Expo Router)</td></tr>
+            <tr><td><code>components/</code></td><td>Reusable UI (home, coach, progress, workout, ui)</td></tr>
+            <tr><td><code>context/</code></td><td>Global React state</td></tr>
+            <tr><td><code>hooks/</code></td><td>Data fetching and derived state</td></tr>
+            <tr><td><code>lib/</code></td><td>API clients, utilities, haptics, metrics</td></tr>
+            <tr><td><code>constants/</code></td><td>Colors, animations, energy-glow tokens</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Section 10 -->
+      <section id="backend">
+        <h2>10. Backend Architecture</h2>
+        <table>
+          <thead><tr><th>Item</th><th>Detail</th></tr></thead>
+          <tbody>
+            <tr><td>Runtime</td><td>Node.js 20+</td></tr>
+            <tr><td>Framework</td><td>Express 5</td></tr>
+            <tr><td>Language</td><td>TypeScript (strict)</td></tr>
+            <tr><td>ORM</td><td>Drizzle</td></tr>
+            <tr><td>Entry</td><td><code>src/index.ts</code></td></tr>
+            <tr><td>Port</td><td>Default 3000, prefix <code>/api</code></td></tr>
+          </tbody>
+        </table>
+
+        <h3>Route groups (all under <code>/api</code>)</h3>
+        <table>
+          <thead><tr><th>Mount</th><th>Domain</th></tr></thead>
+          <tbody>
+            <tr><td><code>/auth</code></td><td>Register, login, Google OAuth, profile, onboarding</td></tr>
+            <tr><td><code>/inbody</code></td><td>Upload, analyze, list, delete reports</td></tr>
+            <tr><td><code>/workout/onboarding</code></td><td>AI plan generation from InBody</td></tr>
+            <tr><td><code>/workouts</code>, <code>/exercises</code></td><td>Sessions, logs, PRs, streaks</td></tr>
+            <tr><td><code>/food</code>, <code>/diet</code>, <code>/hydration</code>, <code>/nutrition</code></td><td>Diet logging and plans</td></tr>
+            <tr><td><code>/progress</code></td><td>Dashboard, check-in, weight, fitness score, history</td></tr>
+            <tr><td><code>/chat</code></td><td>AI trainer threads and replies</td></tr>
+            <tr><td><code>/achievements</code></td><td>List, journey, evaluate triggers</td></tr>
+            <tr><td><code>/coach</code></td><td>Weekly/monthly reviews, daily digest, saved reports</td></tr>
+            <tr><td><code>/motivation</code></td><td>Public quote endpoint</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Core services</h3>
+        <table>
+          <thead><tr><th>Service</th><th>Responsibility</th></tr></thead>
+          <tbody>
+            <tr><td><code>coachReviewService</code></td><td>Weekly/monthly/daily coach content, persistence</td></tr>
+            <tr><td><code>historyService</code></td><td>Unified daily buckets (steps, calories, sleep, weight)</td></tr>
+            <tr><td><code>forecastService</code></td><td>Weight/strength forecasts, timeline insight</td></tr>
+            <tr><td><code>achievementService</code></td><td>Evaluate and award achievements</td></tr>
+            <tr><td><code>workoutService</code></td><td>Sessions, completion, streak sync</td></tr>
+            <tr><td><code>inbodyService</code></td><td>Upload, OCR pipeline, AI analysis, storage</td></tr>
+            <tr><td><code>dietService</code> / <code>dietPlanService</code></td><td>Logging, targets, AI meal plans</td></tr>
+            <tr><td><code>goalRecommendationEngine</code></td><td>Goal progress and next-week targets</td></tr>
+            <tr><td><code>chatService</code></td><td>AI trainer conversation</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Section 11 -->
+      <section id="database">
+        <h2>11. Database Design</h2>
+        <p><strong>Engine:</strong> PostgreSQL (hosted on Supabase)<br>
+        <strong>Migrations:</strong> Drizzle Kit (<code>Veera-backend/drizzle/</code>)<br>
+        <strong>~75 tables</strong> across <strong>18 schema domains</strong></p>
+
+        <table>
+          <thead><tr><th>Domain</th><th>Key tables</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>Users</td><td><code>users</code>, <code>user_profiles</code>, <code>auth_sessions</code></td><td>Identity and profile</td></tr>
+            <tr><td>Workouts</td><td><code>exercises</code>, <code>user_workout_sessions</code>, <code>exercise_logs</code>, <code>personal_records</code></td><td>Training data</td></tr>
+            <tr><td>InBody</td><td><code>inbody_reports</code></td><td>Scans, OCR metrics, AI analysis JSON</td></tr>
+            <tr><td>Analytics</td><td><code>weight_logs</code>, <code>activity_summaries</code>, <code>user_streaks</code>, <code>user_achievements</code></td><td>Progress & gamification</td></tr>
+            <tr><td>Diet</td><td><code>food_items</code>, <code>diet_logs</code>, <code>water_logs</code>, <code>nutrition_targets</code></td><td>Nutrition</td></tr>
+            <tr><td>AI</td><td><code>ai_plan_requests</code>, <code>ai_plan_responses</code></td><td>Coach reviews, digests, plan requests</td></tr>
+            <tr><td>Gyms</td><td><code>gyms</code>, <code>gym_membership_plans</code>, <code>gym_trainers</code></td><td>Multi-tenant gym ops</td></tr>
+            <tr><td>Communications</td><td><code>chat_threads</code>, <code>chat_messages</code>, <code>notifications</code></td><td>Messaging</td></tr>
+          </tbody>
+        </table>
+
+        <div class="callout">
+          <strong>Coach data storage:</strong> Coach reviews and daily digests are stored in existing AI tables — <code>ai_plan_requests.request_type</code> = <code>coach_weekly_review</code> | <code>coach_monthly_review</code> | <code>coach_daily_digest</code>. No separate coach domain tables.
+        </div>
+      </section>
+
+      <!-- Section 12 -->
+      <section id="ai-coach">
+        <h2>12. AI Coach System</h2>
+        <table>
+          <thead><tr><th>Feature</th><th>Input data</th><th>Output</th></tr></thead>
+          <tbody>
+            <tr><td>Daily digest</td><td>Yesterday's steps, calories, sleep, workouts, streak</td><td>Tip + focus action</td></tr>
+            <tr><td>Weekly review</td><td>7-day history, goals, achievements, body trends</td><td>Score, narrative, drivers, next-week focus</td></tr>
+            <tr><td>Monthly report</td><td>30-day aggregates, InBody trends, forecasts</td><td>Long-form report + timeline</td></tr>
+            <tr><td>InBody analysis</td><td>OCR metrics + optional scan text</td><td>Structured sections (body fat, muscle, risks, plan)</td></tr>
+            <tr><td>AI trainer chat</td><td>User message + trainer context bundle</td><td>Conversational reply</td></tr>
+            <tr><td>Workout/diet plans</td><td>Profile, InBody, goals</td><td>Structured plan JSON</td></tr>
+          </tbody>
+        </table>
+
+        <p><strong>AI provider:</strong> Groq (Llama 3.1 / 3.3) via <code>groq-sdk</code>. Environment: <code>GROQ_API_KEY</code>. Fallback rule-based templates when API unavailable.</p>
+
+        <h3>Coach implementation phases</h3>
+        <table>
+          <thead><tr><th>Phase</th><th>Feature</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>0</td><td>Streak sync, foundation</td><td><span class="badge done">Done</span></td></tr>
+            <tr><td>1</td><td>Achievement engine</td><td><span class="badge done">Done</span></td></tr>
+            <tr><td>2</td><td>Weekly review engine</td><td><span class="badge done">Done</span></td></tr>
+            <tr><td>3</td><td>Forecasts & timeline</td><td><span class="badge done">Done</span></td></tr>
+            <tr><td>4</td><td>Daily digest + share cards</td><td><span class="badge done">Done</span></td></tr>
+            <tr><td>5</td><td>Gamification polish</td><td><span class="badge partial">Partial</span></td></tr>
+            <tr><td>6</td><td>Proactive coach (push, chat context)</td><td><span class="badge pending">Pending</span></td></tr>
+            <tr><td>7</td><td>Premium review UX</td><td><span class="badge done">Done</span></td></tr>
+            <tr><td>8</td><td>Daily coach loop</td><td><span class="badge done">Done</span></td></tr>
+            <tr><td>9</td><td>Achievement share screens</td><td><span class="badge partial">Partial</span></td></tr>
+            <tr><td>10</td><td>Leaderboards, AI milestones</td><td><span class="badge pending">Pending</span></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Section 13 -->
+      <section id="data-flows">
+        <h2>13. Key Data Flows</h2>
+
+        <h3>Login</h3>
+        <pre>App → POST /api/auth/login { email, password }
+→ Server validates → JWT issued
+→ App stores token → GET /api/auth/profile
+→ Route to Home or Setup</pre>
+
+        <h3>Complete a workout</h3>
+        <pre>App → POST /api/workouts/session/start
+→ User logs sets → POST /api/workouts/session/log
+→ POST /api/workouts/session/complete
+→ Server updates streak, activity, triggers achievement evaluate
+→ App shows updated streak/score</pre>
+
+        <h3>Upload InBody report</h3>
+        <pre>App → multipart POST /api/inbody/upload
+→ Storage (Supabase) + OCR (Groq Vision → fallbacks)
+→ extractMetrics → analyzeWithGemini (Groq)
+→ Save inbody_reports row
+→ App displays AI analysis; may auto-run if stub data detected</pre>
+
+        <h3>Generate weekly review</h3>
+        <pre>App → GET /api/coach/weekly-review
+→ Server: history + goals + forecasts + Groq narrative
+→ Upsert ai_plan_requests/responses
+→ Return JSON → CoachReportShell UI
+→ Optional: share as PNG via ShareableCoachCard</pre>
+      </section>
+
+      <!-- Section 14 -->
+      <section id="api">
+        <h2>14. API Reference Summary</h2>
+        <p>Base URL: <code>{API_HOST}/api</code><br>
+        Auth header: <code>Authorization: Bearer &lt;JWT&gt;</code></p>
+
+        <h3>Auth</h3>
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>POST</td><td><code>/auth/register</code></td><td>Create account</td></tr>
+            <tr><td>POST</td><td><code>/auth/login</code></td><td>Email/password login</td></tr>
+            <tr><td>GET</td><td><code>/auth/profile</code></td><td>Current user</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Coach</h3>
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/coach/daily-digest?refresh=true</code></td><td>Daily tip (optional force refresh)</td></tr>
+            <tr><td>GET</td><td><code>/coach/weekly-review</code></td><td>Weekly review (lazy generate)</td></tr>
+            <tr><td>GET</td><td><code>/coach/monthly-report</code></td><td>Monthly report</td></tr>
+          </tbody>
+        </table>
+
+        <h3>InBody</h3>
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>POST</td><td><code>/inbody/upload</code></td><td>Upload scan (multipart)</td></tr>
+            <tr><td>POST</td><td><code>/inbody/analyze/:reportId</code></td><td>Re-run AI analysis</td></tr>
+            <tr><td>GET</td><td><code>/inbody/reports</code></td><td>List user reports</td></tr>
+          </tbody>
+        </table>
+
+        <p><em>Full endpoint list: <code>Veera-backend/README.md</code></em></p>
+      </section>
+
+      <!-- Section 15 -->
+      <section id="integrations">
+        <h2>15. Integrations & External Services</h2>
+        <table>
+          <thead><tr><th>Service</th><th>Used for</th></tr></thead>
+          <tbody>
+            <tr><td>Supabase PostgreSQL</td><td>Primary database</td></tr>
+            <tr><td>Supabase Auth / OAuth</td><td>Google sign-in</td></tr>
+            <tr><td>Supabase Storage</td><td>InBody report files</td></tr>
+            <tr><td>Groq</td><td>LLM for coach, InBody, chat, plans</td></tr>
+            <tr><td>Google Cloud Vision</td><td>OCR fallback for InBody</td></tr>
+            <tr><td>OCR.space</td><td>OCR fallback</td></tr>
+            <tr><td>ExerciseDB API</td><td>Exercise catalog enrichment</td></tr>
+            <tr><td>Expo sensors</td><td>Step tracking on device</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Section 16 -->
+      <section id="security">
+        <h2>16. Security & Privacy</h2>
+        <table>
+          <thead><tr><th>Topic</th><th>Approach</th></tr></thead>
+          <tbody>
+            <tr><td>Authentication</td><td>JWT tokens; stored securely on device</td></tr>
+            <tr><td>Authorization</td><td>User can only access own data (userId checks in services)</td></tr>
+            <tr><td>Passwords</td><td>Hashed server-side (never stored plain text)</td></tr>
+            <tr><td>API</td><td>HTTPS in production; CORS configured on backend</td></tr>
+            <tr><td>Files</td><td>InBody uploads in private Supabase bucket; URLs scoped</td></tr>
+            <tr><td>AI data</td><td>Prompts include user metrics; no training on user data by Veera code</td></tr>
+            <tr><td>Secrets</td><td><code>.env</code> files — never committed</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Section 17 -->
+      <section id="stack">
+        <h2>17. Technology Stack</h2>
+        <h3>Frontend</h3>
+        <table>
+          <thead><tr><th>Technology</th><th>Version (approx)</th></tr></thead>
+          <tbody>
+            <tr><td>Expo</td><td>54</td></tr>
+            <tr><td>React Native</td><td>0.81</td></tr>
+            <tr><td>React</td><td>19</td></tr>
+            <tr><td>Expo Router</td><td>6</td></tr>
+            <tr><td>Reanimated</td><td>4</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Backend</h3>
+        <table>
+          <thead><tr><th>Technology</th><th>Version (approx)</th></tr></thead>
+          <tbody>
+            <tr><td>Node.js</td><td>20+</td></tr>
+            <tr><td>Express</td><td>5</td></tr>
+            <tr><td>Drizzle ORM</td><td>latest</td></tr>
+            <tr><td>TypeScript</td><td>5.x</td></tr>
+            <tr><td>Zod</td><td>validation</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Section 18 -->
+      <section id="structure">
+        <h2>18. Project Structure</h2>
+        <pre>Veera/
+├── docs/
+│   ├── Veera_COMPLETE_GUIDE.md
+│   └── Veera_COMPLETE_GUIDE.html
+├── AI_COACH_IMPLEMENTATION_PLAN.md
+├── Veera-backend/
+│   ├── src/
+│   │   ├── index.ts
+│   │   ├── routes/
+│   │   ├── controllers/
+│   │   ├── services/
+│   │   ├── lib/
+│   │   └── db/schema/
+│   ├── drizzle/
+│   └── scripts/
+└── Veera-Frontend/
+    ├── app/
+    ├── components/
+    ├── context/
+    ├── hooks/
+    └── lib/</pre>
+      </section>
+
+      <!-- Section 19 -->
+      <section id="roadmap">
+        <h2>19. Current Status & Roadmap</h2>
+        <h3>What's working today (June 2026)</h3>
+        <ul>
+          <li>User auth (email, Google)</li>
+          <li>Home dashboard with daily score, rings, coach tip</li>
+          <li>Workout logging and AI plans</li>
+          <li>Diet and water logging</li>
+          <li>InBody upload + AI analysis</li>
+          <li>Progress dashboard, fitness journal, achievements</li>
+          <li>AI coach chat</li>
+          <li>Weekly/monthly coach reports with forecasts</li>
+          <li>Daily AI digest on Home</li>
+          <li>Shareable coach report cards</li>
+          <li>Achievement unlock flow and journey screen</li>
+        </ul>
+
+        <h3>In progress / planned</h3>
+        <ul>
+          <li>Equip achievement titles on profile</li>
+          <li>Push notifications when review is ready</li>
+          <li>Coach chat pre-loaded with latest review</li>
+          <li>Achievement detail + share screens</li>
+          <li>Gym leaderboards and social features</li>
+        </ul>
+      </section>
+
+      <!-- Section 20 -->
+      <section id="glossary">
+        <h2>20. Glossary</h2>
+        <table>
+          <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>InBody</td><td>Professional body composition scanner (weight, body fat %, muscle, visceral fat, BMR)</td></tr>
+            <tr><td>Daily Score</td><td>0–100 score from steps, calories, water, sleep, activity</td></tr>
+            <tr><td>Fitness Score</td><td>Longer-term AI-style score on Progress tab</td></tr>
+            <tr><td>Streak</td><td>Consecutive days with qualifying activity</td></tr>
+            <tr><td>PR</td><td>Personal Record — best weight/reps for an exercise</td></tr>
+            <tr><td>OCR</td><td>Optical Character Recognition — reading text from scan images</td></tr>
+            <tr><td>Groq</td><td>Cloud AI provider used for fast LLM inference</td></tr>
+            <tr><td>JWT</td><td>JSON Web Token — secure login session token</td></tr>
+            <tr><td>Drizzle</td><td>TypeScript ORM mapping code to SQL tables</td></tr>
+            <tr><td>BMR / TDEE</td><td>Basal Metabolic Rate / Total Daily Energy Expenditure</td></tr>
+            <tr><td>Digest</td><td>Short daily AI coaching message</td></tr>
+            <tr><td>Weekly Review</td><td>Structured AI summary of your past 7 days</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <footer>
+        <p>Document history: June 9, 2026 — Initial complete guide (user + system design)</p>
+        <p>See also: <code>Veera-backend/README.md</code> · <code>AI_COACH_IMPLEMENTATION_PLAN.md</code></p>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,5 +1,5 @@
 /**
- * Seed the full FitTrack achievement catalog.
+ * Seed the full Veera achievement catalog.
  * Criteria schema documented in src/services/achievementService.ts
  *
  * Usage: node ./scripts/seed-achievements.mjs
