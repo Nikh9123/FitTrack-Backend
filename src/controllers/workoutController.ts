@@ -4,6 +4,10 @@ import { logger } from "../lib/logger";
 import { db, userProfiles, exercises, userWorkoutSessions } from "../db";
 import { eq, and, sql } from "drizzle-orm";
 import * as workoutService from "../services/workoutService";
+import { getWorkoutPlanContext } from "../services/workoutPlanSourceService";
+import { getProgressionSuggestions } from "../services/progressionSuggestionService";
+import { getCatalogCount, searchExercisesFromCatalog, getExercisesByCategory } from "../services/exerciseCatalogService";
+import { googleTutorialUrl, youtubeTutorialUrl } from "../services/workoutPlanBuilderService";
 
 /**
  * Helper to validate UUID format
@@ -18,8 +22,12 @@ function isValidUuid(id: string): boolean {
 export async function getCurrentPlan(req: AuthenticatedRequest, res: Response) {
   const userId = req.auth!.sub;
   try {
-    const plan = await workoutService.getCurrentWorkoutPlan(userId);
-    return res.json({ success: true, plan });
+    const [plan, planContext, catalogCount] = await Promise.all([
+      workoutService.getCurrentWorkoutPlan(userId),
+      getWorkoutPlanContext(userId),
+      getCatalogCount(),
+    ]);
+    return res.json({ success: true, plan, planContext, catalogExerciseCount: catalogCount });
   } catch (err: any) {
     logger.error({ err: err.message, userId }, "Failed to get current workout plan");
     return res.status(500).json({ success: false, error: "Failed to fetch current plan" });
@@ -55,9 +63,10 @@ export async function logExerciseSet(req: AuthenticatedRequest, res: Response) {
   // Log request body for deep inspection
   logger.info({ body: req.body, userId }, "logExerciseSet request received");
 
-  const { workoutSessionId, exerciseId, weight, reps, setsCompleted = 1, duration, notes } = req.body as {
+  const { workoutSessionId, exerciseId, exerciseName, weight, reps, setsCompleted = 1, duration, notes } = req.body as {
     workoutSessionId: string;
     exerciseId: string;
+    exerciseName?: string;
     weight: any;
     reps: any;
     setsCompleted?: any;
@@ -97,6 +106,12 @@ export async function logExerciseSet(req: AuthenticatedRequest, res: Response) {
       if (dbEx) {
         finalExerciseId = dbEx.id;
         logger.info({ exerciseId, finalExerciseId }, "Successfully resolved ExerciseDB ID to database UUID");
+      } else if (exerciseName?.trim()) {
+        finalExerciseId = await workoutService.findOrCreateExercise({
+          id: exerciseId,
+          name: exerciseName.trim(),
+        });
+        logger.info({ exerciseId, exerciseName, finalExerciseId }, "Resolved exercise via name lookup/creation");
       } else {
         logger.warn({ exerciseId }, "Failed to resolve ExerciseDB ID: not found in exercises table");
         return res.status(404).json({ success: false, error: "Exercise not found" });
@@ -271,6 +286,9 @@ export async function persistWorkoutPlan(req: AuthenticatedRequest, res: Respons
       workoutPlan || [],
       strategy
     );
+    if (!planId) {
+      return res.status(500).json({ success: false, error: "Failed to persist workout plan" });
+    }
     return res.json({ success: true, planId });
   } catch (err: any) {
     logger.error({ err: err.message, userId }, "Failed to persist workout plan");
@@ -328,5 +346,100 @@ export async function cancelCurrentActiveSession(req: AuthenticatedRequest, res:
   } catch (err: any) {
     logger.error({ err: err.message, userId }, "Failed to cancel active session");
     return res.status(500).json({ success: false, error: "Failed to cancel active session" });
+  }
+}
+
+/**
+ * GET /api/workouts/plan-context
+ */
+export async function getPlanContext(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth!.sub;
+  try {
+    const planContext = await getWorkoutPlanContext(userId);
+    const catalogCount = await getCatalogCount();
+    return res.json({ success: true, ...planContext, catalogExerciseCount: catalogCount });
+  } catch (err: any) {
+    logger.error({ err: err.message, userId }, "Failed to get workout plan context");
+    return res.status(500).json({ success: false, error: "Failed to get plan context" });
+  }
+}
+
+/**
+ * GET /api/workouts/progression-suggestions
+ */
+export async function getProgressionSuggestionsHandler(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth!.sub;
+  try {
+    const suggestions = await getProgressionSuggestions(userId);
+    return res.json({ success: true, suggestions });
+  } catch (err: any) {
+    logger.error({ err: err.message, userId }, "Failed to get progression suggestions");
+    return res.status(500).json({ success: false, error: "Failed to get progression suggestions" });
+  }
+}
+
+/**
+ * GET /api/exercises/search
+ */
+export async function searchExercisesHandler(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth!.sub;
+  const { q, bodyPart, equipment, limit, offset, markPlan } = req.query as Record<string, string | undefined>;
+  try {
+    const rows = await searchExercisesFromCatalog({
+      query: q,
+      bodyPart,
+      equipment,
+      limit: limit ? parseInt(limit, 10) : 20,
+      offset: offset ? parseInt(offset, 10) : 0,
+    });
+
+    let planNames = new Set<string>();
+    if (markPlan === "true") {
+      const plan = await workoutService.getCurrentWorkoutPlan(userId);
+      for (const ex of plan?.exercises ?? []) {
+        planNames.add((ex.exerciseName ?? "").toLowerCase());
+      }
+    }
+
+    const exercises = rows.map((ex) => ({
+      ...ex,
+      inCurrentPlan: planNames.has(ex.name.toLowerCase()),
+      youtubeUrl: youtubeTutorialUrl(ex.name),
+      googleUrl: googleTutorialUrl(ex.name),
+    }));
+
+    const catalogCount = await getCatalogCount();
+    return res.json({ success: true, exercises, catalogExerciseCount: catalogCount });
+  } catch (err: any) {
+    logger.error({ err: err.message }, "Exercise search failed");
+    return res.status(500).json({ success: false, error: "Exercise search failed" });
+  }
+}
+
+/**
+ * GET /api/exercises/by-category
+ */
+export async function getExercisesByCategoryHandler(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth!.sub;
+  const { category = "strength", limit } = req.query as Record<string, string | undefined>;
+  try {
+    const rows = await getExercisesByCategory(category, limit ? parseInt(limit, 10) : 12);
+
+    const plan = await workoutService.getCurrentWorkoutPlan(userId);
+    const planNames = new Set(
+      (plan?.exercises ?? []).map((ex) => (ex.exerciseName ?? "").toLowerCase()),
+    );
+
+    const exercises = rows.map((ex) => ({
+      ...ex,
+      inCurrentPlan: planNames.has(ex.name.toLowerCase()),
+      youtubeUrl: youtubeTutorialUrl(ex.name),
+      googleUrl: googleTutorialUrl(ex.name),
+    }));
+
+    return res.json({ success: true, exercises, category });
+  } catch (err: any) {
+    logger.error({ err: err.message }, "Category exercises failed");
+    return res.status(500).json({ success: false, error: "Failed to load category exercises" });
   }
 }

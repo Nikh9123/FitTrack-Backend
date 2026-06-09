@@ -31,6 +31,49 @@ function subtractDays(date: Date, days: number): Date {
   return d;
 }
 
+const WEEKDAY_NAMES = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+] as const;
+
+function resolvePlanDayName(day: { dayName?: string | null }, index: number): string {
+  const name = day.dayName?.trim();
+  if (name) return name;
+  return WEEKDAY_NAMES[index] ?? `Day ${index + 1}`;
+}
+
+function resolvePlanDayFocus(day: {
+  focus?: string | null;
+  isRest?: boolean;
+  isCardio?: boolean;
+}): string {
+  if (day.focus?.trim()) return day.focus.trim();
+  if (day.isRest) return "Rest";
+  if (day.isCardio) return "Cardio";
+  return "Training";
+}
+
+/** Flatten exercises from day.exercises or day.sections[].exercises */
+function collectExercisesFromPlanDay(day: {
+  exercises?: unknown[];
+  sections?: Array<{ exercises?: unknown[] }>;
+}): unknown[] {
+  if (Array.isArray(day.exercises) && day.exercises.length > 0) {
+    return day.exercises;
+  }
+  if (Array.isArray(day.sections)) {
+    return day.sections.flatMap((section) =>
+      Array.isArray(section.exercises) ? section.exercises : [],
+    );
+  }
+  return [];
+}
+
 /**
  * 1. Upsert a generated or template exercise into the exercises table
  */
@@ -129,32 +172,37 @@ export async function backfillPlanFromOnboarding(userId: string): Promise<string
       .returning();
 
     let orderIndex = 0;
-    for (const day of rawPlan) {
-      if (day.isRest || !day.exercises || !Array.isArray(day.exercises)) continue;
+    for (let dayIndex = 0; dayIndex < rawPlan.length; dayIndex++) {
+      const day = rawPlan[dayIndex];
+      if (day.isRest) continue;
 
-      for (const ex of day.exercises) {
+      const dayName = resolvePlanDayName(day, dayIndex);
+      const dayExercises = collectExercisesFromPlanDay(day);
+      if (dayExercises.length === 0) continue;
+
+      for (const ex of dayExercises as Array<Record<string, unknown>>) {
         const exerciseId = await findOrCreateExercise({
-          id: ex.id,
-          name: ex.name,
-          bodyPart: ex.bodyPart,
-          target: ex.target,
-          secondaryMuscles: ex.secondaryMuscles,
-          equipment: ex.equipment,
-          gifUrl: ex.gifUrl,
-          instructions: ex.instructions,
+          id: ex.id as string,
+          name: ex.name as string,
+          bodyPart: ex.bodyPart as string,
+          target: ex.target as string,
+          secondaryMuscles: ex.secondaryMuscles as string[],
+          equipment: ex.equipment as string,
+          gifUrl: ex.gifUrl as string,
+          instructions: ex.instructions as string[],
         });
 
         // Insert user workout exercise
         await db.insert(userWorkoutExercises).values({
           workoutPlanId: plan.id,
           exerciseId,
-          exerciseName: ex.name,
-          dayName: day.dayName,
-          sets: ex.sets || 3,
-          reps: ex.repsRange || "10-12",
-          calories: Math.round((ex.estimatedCaloriesPerSet || 12) * (ex.sets || 3)),
-          equipment: ex.equipment || null,
-          muscleGroup: ex.bodyPart || null,
+          exerciseName: ex.name as string,
+          dayName,
+          sets: (ex.sets as number) || 3,
+          reps: (ex.repsRange as string) || "10-12",
+          calories: Math.round(((ex.estimatedCaloriesPerSet as number) || 12) * ((ex.sets as number) || 3)),
+          equipment: (ex.equipment as string) || null,
+          muscleGroup: (ex.bodyPart as string) || null,
           orderIndex: orderIndex++,
         });
       }
@@ -176,67 +224,82 @@ export async function saveOnboardingPlanDirectly(
   workoutPlan: any[],
   strategy: any,
 ): Promise<string | null> {
-  try {
-    if (!Array.isArray(workoutPlan) || workoutPlan.length === 0) return null;
+  if (!Array.isArray(workoutPlan) || workoutPlan.length === 0) return null;
 
+  try {
     logger.info({ userId }, "Persisting newly generated AI workout plan directly to SQL tables");
 
-    // Deactivate previous plans if any
-    // (We simply delete old user plans for a fresh setup, keeping historical sessions intact)
-    const oldPlans = await db
-      .select({ id: userWorkoutPlans.id })
-      .from(userWorkoutPlans)
-      .where(eq(userWorkoutPlans.userId, userId));
-
-    for (const oldPlan of oldPlans) {
-      await db.delete(userWorkoutPlans).where(eq(userWorkoutPlans.id, oldPlan.id));
-    }
-
     const title = `${goal} Workout Plan`;
-    const [plan] = await db
-      .insert(userWorkoutPlans)
-      .values({
-        userId,
-        title,
-        goal,
-        category: strategy?.split || "Full Body",
-        estimatedDuration: strategy?.sessionDuration || "45-55 min",
-        aiGenerated: true,
-      })
-      .returning();
 
+    // Resolve catalog exercise IDs before the transaction (independent of plan row)
+    type ResolvedEx = { ex: Record<string, unknown>; dayName: string; orderIndex: number };
+    const resolved: ResolvedEx[] = [];
     let orderIndex = 0;
-    for (const day of workoutPlan) {
-      if (day.isRest || !day.exercises || !Array.isArray(day.exercises)) continue;
 
-      for (const ex of day.exercises) {
-        const exerciseId = await findOrCreateExercise({
-          id: ex.id,
-          name: ex.name,
-          bodyPart: ex.bodyPart,
-          target: ex.target,
-          secondaryMuscles: ex.secondaryMuscles,
-          equipment: ex.equipment,
-          gifUrl: ex.gifUrl,
-          instructions: ex.instructions,
-        });
+    for (let dayIndex = 0; dayIndex < workoutPlan.length; dayIndex++) {
+      const day = workoutPlan[dayIndex];
+      if (day.isRest) continue;
 
-        await db.insert(userWorkoutExercises).values({
-          workoutPlanId: plan.id,
-          exerciseId,
-          exerciseName: ex.name,
-          dayName: day.dayName,
-          sets: ex.sets || 3,
-          reps: ex.repsRange || "10-12",
-          calories: Math.round((ex.estimatedCaloriesPerSet || 12) * (ex.sets || 3)),
-          equipment: ex.equipment || null,
-          muscleGroup: ex.bodyPart || null,
-          orderIndex: orderIndex++,
-        });
+      const dayName = resolvePlanDayName(day, dayIndex);
+      const dayExercises = collectExercisesFromPlanDay(day);
+      if (dayExercises.length === 0) continue;
+
+      for (const ex of dayExercises as Array<Record<string, unknown>>) {
+        resolved.push({ ex, dayName, orderIndex: orderIndex++ });
       }
     }
 
-    return plan.id;
+    const catalogIds: Array<{ row: ResolvedEx; exerciseId: string }> = [];
+    for (const row of resolved) {
+      const ex = row.ex;
+      const exerciseId = await findOrCreateExercise({
+        id: ex.id as string,
+        name: ex.name as string,
+        bodyPart: ex.bodyPart as string,
+        target: ex.target as string,
+        secondaryMuscles: ex.secondaryMuscles as string[],
+        equipment: ex.equipment as string,
+        gifUrl: ex.gifUrl as string,
+        instructions: ex.instructions as string[],
+      });
+      catalogIds.push({ row, exerciseId });
+    }
+
+    const planId = await db.transaction(async (tx) => {
+      await tx.delete(userWorkoutPlans).where(eq(userWorkoutPlans.userId, userId));
+
+      const [plan] = await tx
+        .insert(userWorkoutPlans)
+        .values({
+          userId,
+          title,
+          goal,
+          category: strategy?.split || "Full Body",
+          estimatedDuration: strategy?.sessionDuration || "45-55 min",
+          aiGenerated: true,
+        })
+        .returning();
+
+      for (const { row, exerciseId } of catalogIds) {
+        const ex = row.ex;
+        await tx.insert(userWorkoutExercises).values({
+          workoutPlanId: plan.id,
+          exerciseId,
+          exerciseName: ex.name as string,
+          dayName: row.dayName,
+          sets: (ex.sets as number) || 3,
+          reps: (ex.repsRange as string) || "10-12",
+          calories: Math.round(((ex.estimatedCaloriesPerSet as number) || 12) * ((ex.sets as number) || 3)),
+          equipment: (ex.equipment as string) || null,
+          muscleGroup: (ex.bodyPart as string) || null,
+          orderIndex: row.orderIndex,
+        });
+      }
+
+      return plan.id;
+    });
+
+    return planId;
   } catch (err: any) {
     logger.error({ err: err.message, userId }, "Failed to persist AI plan directly");
     return null;
@@ -271,10 +334,34 @@ export async function getCurrentWorkoutPlan(userId: string) {
     return null;
   }
 
-  // Fetch exercises associated with this plan
+  // Fetch exercises with master library metadata (GIF, instructions, muscles)
   const planExercises = await db
-    .select()
+    .select({
+      id: userWorkoutExercises.id,
+      exerciseId: userWorkoutExercises.exerciseId,
+      exerciseName: userWorkoutExercises.exerciseName,
+      dayName: userWorkoutExercises.dayName,
+      sets: userWorkoutExercises.sets,
+      reps: userWorkoutExercises.reps,
+      calories: userWorkoutExercises.calories,
+      equipment: userWorkoutExercises.equipment,
+      muscleGroup: userWorkoutExercises.muscleGroup,
+      tutorialUrl: userWorkoutExercises.tutorialUrl,
+      orderIndex: userWorkoutExercises.orderIndex,
+      gifUrl: exercises.gifUrl,
+      imageUrl: exercises.imageUrl,
+      videoUrl: exercises.videoUrl,
+      youtubeUrl: exercises.youtubeUrl,
+      instructions: exercises.instructions,
+      tips: exercises.tips,
+      bodyPart: exercises.bodyPart,
+      targetMuscle: exercises.targetMuscle,
+      primaryMuscle: exercises.primaryMuscle,
+      secondaryMuscles: exercises.secondaryMuscles,
+      difficulty: exercises.difficulty,
+    })
     .from(userWorkoutExercises)
+    .innerJoin(exercises, eq(userWorkoutExercises.exerciseId, exercises.id))
     .where(eq(userWorkoutExercises.workoutPlanId, plan.id))
     .orderBy(userWorkoutExercises.orderIndex);
 

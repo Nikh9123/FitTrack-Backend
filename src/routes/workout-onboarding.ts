@@ -14,6 +14,7 @@ import {
   getOnboardingStatus,
   aiRecommendGoal,
   generateWorkoutPlan,
+  generateUnifiedPlan,
   saveOnboarding,
   resetOnboarding,
 } from "./workout-onboarding.controller";
@@ -23,6 +24,7 @@ const router = Router();
 router.get("/workout/onboarding/status", requireAuth, getOnboardingStatus);
 router.post("/workout/onboarding/ai-recommend", requireAuth, aiRecommendGoal);
 router.post("/workout/onboarding/generate-plan", requireAuth, generateWorkoutPlan);
+router.post("/workout/onboarding/generate-unified", requireAuth, generateUnifiedPlan);
 router.post("/workout/onboarding/save", requireAuth, saveOnboarding);
 router.post("/workout/onboarding/reset", requireAuth, resetOnboarding);
 

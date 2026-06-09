@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Workout Onboarding Controller
  * ------------------------------
  * Handles AI goal recommendation, workout plan generation,
@@ -11,7 +11,12 @@ import { eq, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import Groq from "groq-sdk";
 import type { AuthenticatedRequest } from "../lib/auth";
-import { fetchExercisesByBodyPart, type WorkoutLocation } from "../lib/exercisedb";
+import type { WorkoutLocation } from "../lib/exercisedb";
+import { getWorkoutPlanContext } from "../services/workoutPlanSourceService";
+import {
+  buildMetricsSnapshot,
+  buildStructuredExercisePlan,
+} from "../services/workoutPlanBuilderService";
 import { saveOnboardingPlanDirectly } from "../services/workoutService";
 
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
@@ -25,9 +30,19 @@ const FITNESS_GOALS = [
   "General Fitness",
 ] as const;
 
+const WEEKDAY_NAMES = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+] as const;
+
 export type FitnessGoal = typeof FITNESS_GOALS[number];
 
-// ─── GET /api/workout/onboarding/status ───────────────────────────────────────
+// ΓöÇΓöÇΓöÇ GET /api/workout/onboarding/status ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 export async function getOnboardingStatus(req: AuthenticatedRequest, res: Response) {
   const userId = req.auth!.sub;
 
@@ -48,7 +63,6 @@ export async function getOnboardingStatus(req: AuthenticatedRequest, res: Respon
     const extra = (profile.onboardingData as Record<string, unknown> | null) ?? {};
     const workoutOnboardingCompleted = Boolean(extra.workoutOnboardingCompleted);
 
-    // Check for InBody report
     const [latestReport] = await db
       .select({ id: inbodyReports.id, extractedMetrics: inbodyReports.extractedMetrics, geminiAnalysis: inbodyReports.geminiAnalysis })
       .from(inbodyReports)
@@ -56,12 +70,25 @@ export async function getOnboardingStatus(req: AuthenticatedRequest, res: Respon
       .orderBy(desc(inbodyReports.createdAt))
       .limit(1);
 
+    const planContext = await getWorkoutPlanContext(userId);
+
+    const metricsConsidered = buildMetricsSnapshot(
+      (latestReport?.extractedMetrics as Record<string, string> | null) ?? null,
+      Boolean(latestReport),
+    );
+
     return res.json({
       completed: workoutOnboardingCompleted,
       fitnessGoal: profile.fitnessGoal ?? extra.selectedGoal ?? null,
       workoutPlan: extra.generatedWorkoutPlan ?? null,
       hasInBodyReport: Boolean(latestReport),
       latestReportId: latestReport?.id ?? null,
+      inBodyMetrics: latestReport?.extractedMetrics ?? null,
+      metricsConsidered,
+      planSource: planContext.planSource,
+      hasTrainerAssigned: planContext.hasTrainerAssigned,
+      canGenerateWithAi: planContext.canGenerateWithAi,
+      trainerName: planContext.trainerName,
     });
   } catch (err: any) {
     logger.error({ err: err.message, userId }, "Failed to get workout onboarding status");
@@ -69,7 +96,7 @@ export async function getOnboardingStatus(req: AuthenticatedRequest, res: Respon
   }
 }
 
-// ─── POST /api/workout/onboarding/ai-recommend ────────────────────────────────
+// ΓöÇΓöÇΓöÇ POST /api/workout/onboarding/ai-recommend ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 export async function aiRecommendGoal(req: AuthenticatedRequest, res: Response) {
   const userId = req.auth!.sub;
 
@@ -135,12 +162,13 @@ export async function aiRecommendGoal(req: AuthenticatedRequest, res: Response) 
   }
 }
 
-// ─── POST /api/workout/onboarding/generate-plan ───────────────────────────────
+// ΓöÇΓöÇΓöÇ POST /api/workout/onboarding/generate-plan ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 export async function generateWorkoutPlan(req: AuthenticatedRequest, res: Response) {
   const userId = req.auth!.sub;
-  const { goal, level = "beginner", workoutLocation = "gym" } = req.body as {
+  const { goal, level = "beginner", preferences, workoutLocation = "gym" } = req.body as {
     goal: FitnessGoal;
     level?: string;
+    preferences?: string;
     workoutLocation?: WorkoutLocation;
   };
   const location: WorkoutLocation = workoutLocation === "home" ? "home" : "gym";
@@ -150,6 +178,15 @@ export async function generateWorkoutPlan(req: AuthenticatedRequest, res: Respon
   }
 
   try {
+    const planContext = await getWorkoutPlanContext(userId);
+    if (planContext.hasTrainerAssigned) {
+      return res.status(403).json({
+        success: false,
+        error: "Your trainer has assigned your workout plan. Contact them for changes.",
+        planSource: "trainer",
+      });
+    }
+
     // Fetch latest InBody data for personalisation
     const [report] = await db
       .select({ extractedMetrics: inbodyReports.extractedMetrics, geminiAnalysis: inbodyReports.geminiAnalysis })
@@ -162,15 +199,21 @@ export async function generateWorkoutPlan(req: AuthenticatedRequest, res: Respon
     const analysis = (report?.geminiAnalysis as Record<string, unknown> | null) ?? {};
 
     // Step 1: AI decides the workout strategy (split, frequency, intensity)
-    let strategy = await buildWorkoutStrategy(goal, metrics, analysis, level, location);
+    let strategy = await buildWorkoutStrategy(goal, metrics, analysis, level, preferences, location);
 
-    // Step 2: Fetch exercises from ExerciseDB for each training day
-    const plan = await buildExercisePlan(strategy, goal, location);
+    // Step 2: Build structured plan from catalog (warmup ΓåÆ cardio ΓåÆ main ΓåÆ stretch)
+    const plan = await buildStructuredExercisePlan(strategy.trainingDays, strategy.sessionDuration);
+    const metricsConsidered = buildMetricsSnapshot(metrics, Boolean(report));
 
     return res.json({
       success: true,
       strategy,
       plan,
+      planSource: "ai",
+      usedInBody: Boolean(report),
+      catalogExercises: true,
+      metricsConsidered,
+      workoutLocation: location,
     });
   } catch (err: any) {
     logger.error({ err: err.message, userId, goal }, "Workout plan generation failed");
@@ -178,7 +221,7 @@ export async function generateWorkoutPlan(req: AuthenticatedRequest, res: Respon
   }
 }
 
-// ─── POST /api/workout/onboarding/save ────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ POST /api/workout/onboarding/save ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 export async function saveOnboarding(req: AuthenticatedRequest, res: Response) {
   const userId = req.auth!.sub;
   const { goal, aiRecommendedGoal, workoutPlan, strategy, workoutLocation } = req.body as {
@@ -194,6 +237,14 @@ export async function saveOnboarding(req: AuthenticatedRequest, res: Response) {
   }
 
   try {
+    const planContext = await getWorkoutPlanContext(userId);
+    if (planContext.hasTrainerAssigned) {
+      return res.status(403).json({
+        success: false,
+        error: "Cannot overwrite a trainer-assigned plan with AI. Contact your trainer.",
+      });
+    }
+
     const [existingProfile] = await db
       .select({ onboardingData: userProfiles.onboardingData })
       .from(userProfiles)
@@ -223,7 +274,11 @@ export async function saveOnboarding(req: AuthenticatedRequest, res: Response) {
       .where(eq(userProfiles.userId, userId));
 
     if (workoutPlan && strategy) {
-      await saveOnboardingPlanDirectly(userId, goal, workoutPlan as any[], strategy);
+      const planId = await saveOnboardingPlanDirectly(userId, goal, workoutPlan as any[], strategy);
+      if (!planId) {
+        return res.status(500).json({ success: false, error: "Failed to persist workout plan to database" });
+      }
+      return res.json({ success: true, planId });
     }
 
     return res.json({ success: true });
@@ -233,7 +288,7 @@ export async function saveOnboarding(req: AuthenticatedRequest, res: Response) {
   }
 }
 
-// ─── POST /api/workout/onboarding/reset ───────────────────────────────────────
+// ΓöÇΓöÇΓöÇ POST /api/workout/onboarding/reset ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 export async function resetOnboarding(req: AuthenticatedRequest, res: Response) {
   const userId = req.auth!.sub;
 
@@ -259,7 +314,7 @@ export async function resetOnboarding(req: AuthenticatedRequest, res: Response) 
   }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 function buildRecommendationPrompt(
   metrics: Record<string, string>,
@@ -306,14 +361,14 @@ function inferGoalFromMetrics(metrics: Record<string, string>): FitnessGoal {
 
 function buildFallbackRecommendation(metrics: Record<string, string>) {
   const goal = inferGoalFromMetrics(metrics);
-  const bodyFat = metrics.bodyFat ?? "—";
-  const bmi = metrics.bmi ?? "—";
+  const bodyFat = metrics.bodyFat ?? "ΓÇö";
+  const bmi = metrics.bmi ?? "ΓÇö";
 
   return {
     recommendedGoal: goal,
     reasoning: `Based on your body fat of ${bodyFat}% and BMI of ${bmi}, ${goal} is the most appropriate starting goal to improve your body composition and health markers.`,
     transformationPriority: goal === "Fat Loss" ? "Reducing body fat and visceral fat" : "Building lean muscle mass",
-    estimatedTimeline: "8–12 weeks to see measurable results",
+    estimatedTimeline: "8ΓÇô12 weeks to see measurable results",
     beginnerSuitability: "Beginner",
     confidence: 75,
   };
@@ -340,15 +395,39 @@ interface WorkoutStrategy {
   }>;
 }
 
+function ensureTrainingDays(
+  days: WorkoutStrategy["trainingDays"],
+  fallback: WorkoutStrategy["trainingDays"],
+): WorkoutStrategy["trainingDays"] {
+  const source = days.length >= 7 ? days : fallback;
+  return source.map((day, index) => ({
+    ...day,
+    dayName: day.dayName?.trim() || WEEKDAY_NAMES[index] || `Day ${index + 1}`,
+    focus:
+      day.focus?.trim() ||
+      (day.isRest ? "Rest" : day.isCardio ? "Cardio" : "Training"),
+    bodyParts: Array.isArray(day.bodyParts) ? day.bodyParts : [],
+    isCardio: Boolean(day.isCardio),
+    isRest: Boolean(day.isRest),
+    sets: day.sets ?? 3,
+    repsRange: day.repsRange ?? "10-12",
+    restSeconds: day.restSeconds ?? 60,
+  }));
+}
+
 async function buildWorkoutStrategy(
   goal: FitnessGoal,
   metrics: Record<string, string>,
   analysis: Record<string, unknown>,
   level: string,
+  preferences?: string,
   location: WorkoutLocation = "gym",
 ): Promise<WorkoutStrategy> {
+  const baseStrategy = getDefaultStrategy(goal, level);
+  baseStrategy.trainingDays = ensureTrainingDays(baseStrategy.trainingDays, baseStrategy.trainingDays);
+
   if (!groq) {
-    return getDefaultStrategy(goal, level, location);
+    return baseStrategy;
   }
 
   const bodyFat = metrics.bodyFat ?? "unknown";
@@ -356,6 +435,7 @@ async function buildWorkoutStrategy(
   const bmi = metrics.bmi ?? "unknown";
   const visceralFat = metrics.visceralFat ?? "unknown";
 
+  const goalSplitGuide = getGoalSplitGuide(goal);
   const locationNote =
     location === "home"
       ? "User trains at HOME with bodyweight, dumbbells, and resistance bands only — no machines, barbells, or cables."
@@ -365,46 +445,41 @@ async function buildWorkoutStrategy(
 Level: ${level}
 Training location: ${location}
 Body Fat: ${bodyFat}%, SMM: ${smm} kg, BMI: ${bmi}, Visceral Fat: ${visceralFat}
+User preferences: ${preferences?.trim() || "none specified"}
 
 ${locationNote}
 
-Design a weekly workout strategy. Return ONLY this JSON structure (no extra fields):
+${goalSplitGuide}
+
+Design a weekly workout strategy. Return ONLY valid JSON (no extra fields):
 {
-  "split": "PPL|Upper Lower|Full Body|Hybrid Fat Loss",
-  "splitName": "Push Pull Legs",
+  "split": "<must match goal ΓÇö see guide above>",
+  "splitName": "<human-readable plan name aligned with goal>",
   "daysPerWeek": 4,
   "sessionDuration": "45-55 min",
   "intensity": "Moderate",
   "cardioFrequency": "3x per week",
-  "progressionStyle": "Linear progression",
+  "progressionStyle": "Volume progression",
   "beginnerFriendly": true,
-  "trainingDays": [
-    {
-      "dayName": "Monday",
-      "focus": "Push",
-      "bodyParts": ["chest", "shoulders", "upper arms"],
-      "isCardio": false,
-      "isRest": false,
-      "sets": 3,
-      "repsRange": "10-12",
-      "restSeconds": 60
-    }
-  ]
+  "trainingDays": [ ... 7 days ... ]
 }
 
 Rules:
-- trainingDays must cover all 7 days (include rest days with isRest: true and cardio days with isCardio: true)
-- bodyParts must be exact values from: chest, back, upper legs, lower legs, shoulders, upper arms, lower arms, waist, cardio
-- For rest days set bodyParts to []
-- For beginners use 3 days training + 1-2 cardio + rest
-- For Fat Loss include more cardio days and shorter rest periods
+- trainingDays must cover all 7 days (rest days: isRest true; cardio days: isCardio true)
+- bodyParts: chest, back, upper legs, lower legs, shoulders, upper arms, lower arms, waist, cardio
+- For Fat Loss: NEVER use Push Pull Legs / PPL ΓÇö use Hybrid Fat Loss or Upper/Lower with 2+ cardio days
+- For Muscle Gain / Strength: PPL or Upper/Lower is OK
 - Match intensity to body fat level
-- For home training: prefer full-body splits, shorter sessions (35-45 min), bodyweight and dumbbell-friendly body parts`;
+- For home training: prefer full-body splits, shorter sessions (35-45 min), bodyweight and dumbbell-friendly exercises`;
 
   try {
     const completion = await groq.chat.completions.create({
       messages: [
-        { role: "system", content: "You are a certified fitness coach. Return ONLY valid JSON." },
+        {
+          role: "system",
+          content:
+            "You are a certified fitness coach. Return ONLY valid JSON. The split and splitName MUST match the user's stated fitness goal.",
+        },
         { role: "user", content: prompt },
       ],
       model: "llama-3.1-8b-instant",
@@ -414,26 +489,83 @@ Rules:
     });
 
     const raw = completion.choices[0]?.message?.content ?? "";
-    const strategy = JSON.parse(raw) as WorkoutStrategy;
+    const aiStrategy = JSON.parse(raw) as WorkoutStrategy;
 
-    if (!Array.isArray(strategy.trainingDays) || strategy.trainingDays.length === 0) {
+    if (!Array.isArray(aiStrategy.trainingDays) || aiStrategy.trainingDays.length === 0) {
       throw new Error("Invalid strategy");
     }
 
-    return strategy;
+    return normalizeStrategyForGoal(aiStrategy, baseStrategy, goal);
   } catch (err: any) {
-    logger.warn({ err: err.message, goal }, "Strategy generation failed — using default");
-    return getDefaultStrategy(goal, level, location);
+    logger.warn({ err: err.message, goal }, "Strategy generation failed ΓÇö using default");
+    return baseStrategy;
   }
 }
 
-function getDefaultStrategy(goal: FitnessGoal, level: string, _location: WorkoutLocation = "gym"): WorkoutStrategy {
+function getGoalSplitGuide(goal: FitnessGoal): string {
+  switch (goal) {
+    case "Fat Loss":
+      return `REQUIRED for Fat Loss:
+- split must be "Hybrid Fat Loss" or "Upper Lower" (NOT PPL)
+- splitName examples: "Fat Loss Hybrid Split", "Fat Loss Upper/Lower"
+- Include 2-3 dedicated cardio days per week
+- Focus on full-body / upper-lower with higher reps (12-15)`;
+    case "Muscle Gain":
+      return `For Muscle Gain: split "PPL" or "Upper Lower", splitName e.g. "Push Pull Legs" or "Upper Lower Hypertrophy"`;
+    case "Strength":
+      return `For Strength: split "PPL" or "Upper Lower", splitName e.g. "Strength PPL" or "Upper Lower Strength"`;
+    case "Body Recomposition":
+      return `For Body Recomposition: "Upper Lower" or "Full Body", 2 cardio days, splitName e.g. "Recomp Upper/Lower"`;
+    case "Athletic Performance":
+      return `For Athletic Performance: "Full Body" or hybrid, include cardio/agility days, splitName e.g. "Athletic Performance Plan"`;
+    default:
+      return `For General Fitness: "Full Body" 3-day split, 2 cardio days, splitName e.g. "Full Body 3-Day"`;
+  }
+}
+
+function normalizeStrategyForGoal(
+  ai: WorkoutStrategy,
+  fallback: WorkoutStrategy,
+  goal: FitnessGoal,
+): WorkoutStrategy {
+  const splitLower = (ai.split ?? "").toLowerCase();
+  const nameLower = (ai.splitName ?? "").toLowerCase();
+  const isPpl = splitLower === "ppl" || splitLower.includes("push pull") || nameLower.includes("push pull");
+
+  if (goal === "Fat Loss" && isPpl) {
+    logger.info({ goal, aiSplit: ai.split }, "AI returned PPL for Fat Loss ΓÇö using goal default");
+    return {
+      ...fallback,
+      intensity: ai.intensity || fallback.intensity,
+      cardioFrequency: ai.cardioFrequency || fallback.cardioFrequency,
+      progressionStyle: ai.progressionStyle || fallback.progressionStyle,
+    };
+  }
+
+  if (goal === "Fat Loss" && !splitLower.includes("fat") && !splitLower.includes("upper lower") && !splitLower.includes("full body")) {
+    return { ...fallback, intensity: ai.intensity || fallback.intensity };
+  }
+
+  if ((goal === "General Fitness" || goal === "Athletic Performance") && isPpl) {
+    return { ...fallback, intensity: ai.intensity || fallback.intensity };
+  }
+
+  return {
+    ...fallback,
+    ...ai,
+    split: ai.split || fallback.split,
+    splitName: ai.splitName || fallback.splitName,
+    trainingDays: ensureTrainingDays(ai.trainingDays, fallback.trainingDays),
+  };
+}
+
+function getDefaultStrategy(goal: FitnessGoal, level: string): WorkoutStrategy {
   const isBeginnerOrFatLoss = level === "beginner" || goal === "Fat Loss";
 
   if (goal === "Fat Loss") {
     return {
       split: "Hybrid Fat Loss",
-      splitName: "Fat Loss Hybrid Split",
+      splitName: "Fat Loss Workout Plan",
       daysPerWeek: 5,
       sessionDuration: "40-50 min",
       intensity: "Moderate-High",
@@ -495,128 +627,122 @@ function getDefaultStrategy(goal: FitnessGoal, level: string, _location: Workout
   };
 }
 
-export interface ExercisePlanDay {
-  dayName: string;
-  focus: string;
-  isRest: boolean;
-  isCardio: boolean;
-  estimatedCalories: number;
-  estimatedDuration: string;
-  exercises: Array<{
-    id: string;
-    name: string;
-    bodyPart: string;
-    target: string;
-    secondaryMuscles: string[];
-    equipment: string;
-    gifUrl: string;
-    instructions: string[];
-    sets: number;
-    repsRange: string;
-    restSeconds: number;
-    estimatedCaloriesPerSet: number;
-    difficulty: string;
-  }>;
-}
+/**
+ * POST /api/workout/onboarding/generate-unified
+ * One-step: optional AI goal pick + structured plan from catalog + real metrics.
+ */
+export async function generateUnifiedPlan(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth!.sub;
+  const {
+    goal: manualGoal,
+    level = "beginner",
+    preferences,
+    useAiGoal = true,
+    workoutLocation = "gym",
+  } = req.body as {
+    goal?: FitnessGoal;
+    level?: string;
+    preferences?: string;
+    useAiGoal?: boolean;
+    workoutLocation?: WorkoutLocation;
+  };
+  const location: WorkoutLocation = workoutLocation === "home" ? "home" : "gym";
 
-async function buildExercisePlan(
-  strategy: WorkoutStrategy,
-  goal: FitnessGoal,
-  location: WorkoutLocation = "gym",
-): Promise<ExercisePlanDay[]> {
-  const plan: ExercisePlanDay[] = [];
-
-  for (const day of strategy.trainingDays) {
-    if (day.isRest) {
-      plan.push({
-        dayName: day.dayName,
-        focus: "Rest",
-        isRest: true,
-        isCardio: false,
-        estimatedCalories: 0,
-        estimatedDuration: "—",
-        exercises: [],
+  try {
+    const planContext = await getWorkoutPlanContext(userId);
+    if (planContext.hasTrainerAssigned) {
+      return res.status(403).json({
+        success: false,
+        error: "Your trainer manages your plan. Contact them for updates.",
+        planSource: "trainer",
       });
-      continue;
     }
 
-    if (day.isCardio) {
-      const cardioLimit = location === "home" ? 4 : 3;
-      const cardioExercises = await fetchExercisesByBodyPart("cardio", cardioLimit, { location });
-      const homeCardio = location === "home"
-        ? cardioExercises.filter((ex) => !["treadmill", "machine", "stationary bike"].some((b) => ex.equipment.toLowerCase().includes(b)))
-        : cardioExercises;
-      const selectedCardio = homeCardio.length > 0 ? homeCardio : cardioExercises;
-      plan.push({
-        dayName: day.dayName,
-        focus: day.focus,
-        isRest: false,
-        isCardio: true,
-        estimatedCalories: 280,
-        estimatedDuration: day.repsRange || "30 min",
-        exercises: selectedCardio.slice(0, 3).map((ex) => ({
-          ...ex,
-          sets: 1,
-          repsRange: day.repsRange || "30 min",
-          restSeconds: 0,
-          estimatedCaloriesPerSet: 90,
-          difficulty: "Beginner",
-        })),
-      });
-      continue;
-    }
+    const [report] = await db
+      .select({ extractedMetrics: inbodyReports.extractedMetrics, geminiAnalysis: inbodyReports.geminiAnalysis })
+      .from(inbodyReports)
+      .where(eq(inbodyReports.userId, userId))
+      .orderBy(desc(inbodyReports.createdAt))
+      .limit(1);
 
-    const allExercises: ExercisePlanDay["exercises"] = [];
+    const metrics = (report?.extractedMetrics as Record<string, string> | null) ?? {};
+    const analysis = (report?.geminiAnalysis as Record<string, unknown> | null) ?? {};
+    const metricsConsidered = buildMetricsSnapshot(metrics, Boolean(report));
 
-    for (const bodyPart of day.bodyParts) {
-      const exLimit = Math.min(3, Math.ceil(6 / day.bodyParts.length));
-      const fetched = await fetchExercisesByBodyPart(bodyPart, exLimit, { location });
+    let resolvedGoal = manualGoal;
+    let aiRecommendation = null;
 
-      for (const ex of fetched) {
-        const difficulty = day.sets >= 4 ? "Intermediate" : "Beginner";
-        const calsPerSet = estimateCalsPerSet(bodyPart, day.sets);
-
-        allExercises.push({
-          ...ex,
-          sets: day.sets,
-          repsRange: day.repsRange,
-          restSeconds: day.restSeconds,
-          estimatedCaloriesPerSet: calsPerSet,
-          difficulty,
-        });
+    if (useAiGoal && report?.extractedMetrics) {
+      if (groq) {
+        try {
+          const prompt = buildRecommendationPrompt(metrics, analysis);
+          const completion = await groq.chat.completions.create({
+            messages: [
+              {
+                role: "system",
+                content: `You are an elite fitness coach. Return ONLY valid JSON: {"recommendedGoal":"Fat Loss|Muscle Gain|Body Recomposition|Strength|Athletic Performance|General Fitness","reasoning":"...","transformationPriority":"...","estimatedTimeline":"...","beginnerSuitability":"Beginner|Intermediate|Advanced","confidence":85}`,
+              },
+              { role: "user", content: prompt },
+            ],
+            model: "llama-3.1-8b-instant",
+            temperature: 0.3,
+            max_tokens: 600,
+            response_format: { type: "json_object" },
+          });
+          const parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
+          if (FITNESS_GOALS.includes(parsed.recommendedGoal)) {
+            aiRecommendation = parsed;
+            if (!resolvedGoal) resolvedGoal = parsed.recommendedGoal;
+          }
+        } catch {
+          /* fallback below */
+        }
+      }
+      if (!aiRecommendation) {
+        const inferred = inferGoalFromMetrics(metrics);
+        aiRecommendation = {
+          recommendedGoal: inferred,
+          reasoning: `Based on your InBody: body fat ${metrics.bodyFat ?? "ΓÇö"}%, muscle mass ${metrics.skeletalMuscleMass ?? "ΓÇö"} kg.`,
+          transformationPriority: inferred === "Fat Loss" ? "Reduce body fat" : "Build lean mass",
+          estimatedTimeline: "8ΓÇô12 weeks",
+          beginnerSuitability: "Beginner",
+          confidence: 80,
+        };
+        if (!resolvedGoal) resolvedGoal = inferred;
       }
     }
 
-    const totalCals = allExercises.reduce(
-      (sum, ex) => sum + ex.estimatedCaloriesPerSet * ex.sets,
-      0,
-    );
+    if (!resolvedGoal) {
+      if (manualGoal) {
+        resolvedGoal = manualGoal;
+      } else if (!report?.extractedMetrics) {
+        resolvedGoal = "General Fitness";
+      }
+    }
 
-    plan.push({
-      dayName: day.dayName,
-      focus: day.focus,
-      isRest: false,
-      isCardio: false,
-      estimatedCalories: Math.round(totalCals),
-      estimatedDuration: strategy.sessionDuration,
-      exercises: allExercises,
+    if (!resolvedGoal) {
+      return res.status(400).json({ error: "Select a goal or upload InBody for AI recommendation" });
+    }
+
+    if (!FITNESS_GOALS.includes(resolvedGoal)) {
+      return res.status(400).json({ error: "Invalid fitness goal" });
+    }
+
+    const strategy = await buildWorkoutStrategy(resolvedGoal, metrics, analysis, level, preferences, location);
+    const plan = await buildStructuredExercisePlan(strategy.trainingDays, strategy.sessionDuration);
+
+    return res.json({
+      success: true,
+      goal: resolvedGoal,
+      aiRecommendation,
+      strategy,
+      plan,
+      metricsConsidered,
+      planSource: "ai",
+      workoutLocation: location,
     });
+  } catch (err: any) {
+    logger.error({ err: err.message, userId }, "Unified plan generation failed");
+    return res.status(500).json({ error: "Failed to generate workout plan" });
   }
-
-  return plan;
-}
-
-function estimateCalsPerSet(bodyPart: string, sets: number): number {
-  const map: Record<string, number> = {
-    chest: 14,
-    back: 16,
-    "upper legs": 22,
-    "lower legs": 8,
-    shoulders: 10,
-    "upper arms": 8,
-    "lower arms": 6,
-    waist: 10,
-    cardio: 90,
-  };
-  return map[bodyPart] ?? 12;
 }

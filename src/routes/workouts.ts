@@ -12,6 +12,10 @@ import {
   persistWorkoutPlan,
   cancelSession,
   cancelCurrentActiveSession,
+  getPlanContext,
+  getProgressionSuggestionsHandler,
+  searchExercisesHandler,
+  getExercisesByCategoryHandler,
 } from "../controllers/workoutController";
 
 const router = Router();
@@ -28,5 +32,9 @@ router.get("/workouts/history", requireAuth, getHistory);
 router.get("/workouts/insights", requireAuth, getInsights);
 router.get("/workouts/personal-records", requireAuth, getPRs);
 router.get("/workouts/streaks", requireAuth, getStreaks);
+router.get("/workouts/plan-context", requireAuth, getPlanContext);
+router.get("/workouts/progression-suggestions", requireAuth, getProgressionSuggestionsHandler);
+router.get("/exercises/search", requireAuth, searchExercisesHandler);
+router.get("/exercises/by-category", requireAuth, getExercisesByCategoryHandler);
 
 export default router;
