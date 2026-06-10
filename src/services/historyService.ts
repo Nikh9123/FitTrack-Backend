@@ -29,7 +29,7 @@ export interface WeightChangeResult {
 
 const KCAL_PER_KG_FAT = 7700;
 const ESTIMATED_WEIGHT_DISCLAIMER =
-  "Estimated from your food and activity. Scale weight may take 2–3 weeks to catch up.";
+  "Actual weight change may take up to 3 weeks to show on the scale.";
 
 export interface HistoryDayBucket {
   date: string;
@@ -777,6 +777,23 @@ async function resolveUserBmr(userId: string, fallbackWeightKg: number): Promise
   return Math.round(calcBmrMifflin(weightKg, heightCm, age, gender));
 }
 
+async function getWeightAsOf(userId: string, asOf: Date): Promise<number | null> {
+  const [row] = await db
+    .select({ weightKg: weightLogs.weightKg })
+    .from(weightLogs)
+    .where(
+      and(
+        eq(weightLogs.userId, userId),
+        lte(weightLogs.recordedAt, asOf),
+        or(isNull(weightLogs.notes), ne(weightLogs.notes, "fittrack_demo_seed")),
+      ),
+    )
+    .orderBy(desc(weightLogs.recordedAt))
+    .limit(1);
+
+  return parseWeightKg(row?.weightKg);
+}
+
 async function getLatestWeightAnchor(
   userId: string,
   before: Date,
@@ -795,8 +812,21 @@ async function getLatestWeightAnchor(
     .limit(1);
 
   const anchorKg = parseWeightKg(row?.weightKg);
-  if (row == null || anchorKg == null) return null;
-  return { anchorKg, anchorDate: toLocalDateKey(new Date(row.recordedAt)) };
+  if (row != null && anchorKg != null) {
+    return { anchorKg, anchorDate: toLocalDateKey(new Date(row.recordedAt)) };
+  }
+
+  const [profile] = await db
+    .select({ weightKg: userProfiles.weightKg })
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId))
+    .limit(1);
+
+  const profileKg = parseWeightKg(profile?.weightKg);
+  if (profileKg == null) return null;
+  const anchorDay = new Date(before);
+  anchorDay.setDate(anchorDay.getDate() - 1);
+  return { anchorKg: profileKg, anchorDate: toLocalDateKey(anchorDay) };
 }
 
 async function getEstimatedScaleWeightChange(
@@ -898,17 +928,6 @@ async function getEstimatedScaleWeightChange(
     burnedByDay.set(key, (burnedByDay.get(key) ?? dailyBmr) + (row.caloriesBurned ?? 0));
   }
 
-  let trackedDays = 0;
-  for (const key of periodDayKeys) {
-    const consumed = consumedByDay.get(key) ?? 0;
-    const activityExtra = (burnedByDay.get(key) ?? dailyBmr) - dailyBmr;
-    if (consumed > 0 || activityExtra > 0) trackedDays += 1;
-  }
-
-  if (trackedDays === 0) {
-    return { deltaKg: 0, direction: "unchanged", startKg: 0, endKg: 0, hasData: false };
-  }
-
   const deficitFromAnchorTo = (throughKey: string): number => {
     let total = 0;
     let cursor = firstDeficitDay;
@@ -972,27 +991,19 @@ async function getLoggedScaleWeightChange(
     .orderBy(asc(weightLogs.recordedAt));
 
   if (period === "1d") {
-    const todayKey = toLocalDateKey(new Date());
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayKey = toLocalDateKey(yesterday);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    const yesterdayEnd = new Date();
+    yesterdayEnd.setDate(yesterdayEnd.getDate() - 1);
+    yesterdayEnd.setHours(23, 59, 59, 999);
 
-    const allRows = await db
-      .select({ recordedAt: weightLogs.recordedAt, weightKg: weightLogs.weightKg })
-      .from(weightLogs)
-      .where(
-        and(
-          eq(weightLogs.userId, userId),
-          or(isNull(weightLogs.notes), ne(weightLogs.notes, "fittrack_demo_seed")),
-        ),
-      )
-      .orderBy(asc(weightLogs.recordedAt));
+    const [endKg, startKg] = await Promise.all([
+      getWeightAsOf(userId, todayEnd),
+      getWeightAsOf(userId, yesterdayEnd),
+    ]);
 
-    const byDate = latestWeightByDate(allRows);
-    const todayKg = byDate.get(todayKey);
-    const yesterdayKg = byDate.get(yesterdayKey);
-    if (todayKg != null && yesterdayKg != null) {
-      return buildWeightChangeResult(yesterdayKg, todayKg);
+    if (endKg != null && startKg != null) {
+      return buildWeightChangeResult(startKg, endKg);
     }
     return null;
   }

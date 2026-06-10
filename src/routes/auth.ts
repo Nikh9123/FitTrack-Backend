@@ -279,12 +279,12 @@ router.get("/auth/me", requireAuth, async (req: AuthenticatedRequest, res) => {
 // ─── Update profile / settings ───────────────────────────────────────────────
 router.patch("/auth/me", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = req.auth!.sub;
-  const { firstName, lastName, avatarUrl, phone, preferences } = req.body;
+  const { firstName, lastName, avatarUrl, phone, region, preferences } = req.body;
 
   logger.info({ userId }, "Profile update requested");
 
   try {
-    const row = await updateUserProfile(userId, { firstName, lastName, avatarUrl, phone, preferences });
+    const row = await updateUserProfile(userId, { firstName, lastName, avatarUrl, phone, region, preferences });
     logger.info({ userId }, "Profile updated successfully");
     return res.json({ user: toPublicUser(row!.user, row!.profile) });
   } catch (err) {

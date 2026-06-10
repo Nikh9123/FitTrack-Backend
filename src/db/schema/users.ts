@@ -153,6 +153,8 @@ export const userProfiles = pgTable(
     workoutExperience: text("workout_experience"),
     region: text("region"),
 
+    membershipTier: text("membership_tier").notNull().default("free"),
+
     createdAt: timestamp("created_at", {
       withTimezone: true,
     })

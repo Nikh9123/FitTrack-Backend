@@ -2,6 +2,7 @@ export * from "./lookups";
 export * from "./users";
 export * from "./gyms";
 export * from "./memberships";
+export * from "./membership-upgrades";
 export * from "./attendance";
 export * from "./scheduling";
 export * from "./workouts";
@@ -19,6 +20,7 @@ export * from "./inbody";
 import * as usersSchema from "./users";
 import * as gymsSchema from "./gyms";
 import * as membershipsSchema from "./memberships";
+import * as membershipUpgradesSchema from "./membership-upgrades";
 import * as attendanceSchema from "./attendance";
 import * as schedulingSchema from "./scheduling";
 import * as workoutsSchema from "./workouts";
@@ -37,6 +39,7 @@ export const schema = {
   ...usersSchema,
   ...gymsSchema,
   ...membershipsSchema,
+  ...membershipUpgradesSchema,
   ...attendanceSchema,
   ...schedulingSchema,
   ...workoutsSchema,

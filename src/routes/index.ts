@@ -10,6 +10,7 @@ import motivationRouter from "./motivation";
 import chatRouter from "./chat";
 import achievementsRouter from "./achievements";
 import coachRouter from "./coach";
+import membershipRouter from "./membership";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(motivationRouter);
 router.use(chatRouter);
 router.use(achievementsRouter);
 router.use(coachRouter);
+router.use(membershipRouter);
 
 export default router;

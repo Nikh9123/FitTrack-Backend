@@ -143,6 +143,7 @@ function formatUser(user: User, profile: UserProfile | null) {
     weightKg: profile?.weightKg ?? null,
     bmi: profile?.bmi ?? null,
     region: profile?.region ?? null,
+    membershipTier: profile?.membershipTier ?? "free",
     memberSince: user.createdAt.toISOString().split("T")[0],
   };
 }
@@ -169,12 +170,14 @@ export async function updateUserProfile(userId: string, payload: {
   lastName?: string | null;
   avatarUrl?: string | null;
   phone?: string | null;
+  region?: string | null;
   preferences?: any;
 }) {
   const updatesProfile: Record<string, unknown> = {};
   if (payload.firstName !== undefined) updatesProfile.firstName = payload.firstName;
   if (payload.lastName !== undefined) updatesProfile.lastName = payload.lastName;
   if (payload.avatarUrl !== undefined) updatesProfile.avatarUrl = payload.avatarUrl;
+  if (payload.region !== undefined) updatesProfile.region = payload.region;
 
   if (Object.keys(updatesProfile).length > 0) {
     await db.update(userProfiles).set(updatesProfile).where(eq(userProfiles.userId, userId));
