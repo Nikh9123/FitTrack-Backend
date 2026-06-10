@@ -14,6 +14,7 @@ import { logger } from "../lib/logger";
 import { uploadToStorage, runOCR } from "../lib/inbody-ocr";
 import { isValidExtraction } from "../lib/inbody-parser";
 import { analyzeWithGemini, type GeminiAnalysis } from "../lib/gemini";
+import ws from "ws";
 
 // ─── Supabase Storage client (service-role key for delete) ───────────────────
 const storageClient = createClient(
@@ -21,6 +22,14 @@ const storageClient = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY ??
     process.env.SUPABASE_ANON_KEY ??
     "placeholder",
+  {
+    global: {
+      fetch: (url, options) => fetch(url, { ...options, duplex: "half" } as RequestInit),
+    },
+    realtime: {
+      transport: ws,
+    },
+  }
 );
 
 const STORAGE_BUCKET = "inbody-reports";

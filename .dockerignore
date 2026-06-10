@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Node
+node_modules
+npm-debug.log
+
+# Build artifacts
+dist
+build
+
+# Local environment
+.env
+.env.local
+
+# IDE
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Scripts and local config
+scripts/
+deploy.sh
+redeploy.sh
+run_local.sh

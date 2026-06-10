@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import ws from "ws";
 
 /** Extract Supabase project ref from a Postgres connection string. */
 export function extractSupabaseProjectRef(databaseUrl: string): string | null {
@@ -42,7 +43,14 @@ export function getSupabaseClient(): SupabaseClient | null {
   if (!cachedClient) {
     // OAuth URL generation works without a real anon key; storage/admin features need SUPABASE_ANON_KEY.
     const anonKey = resolveSupabaseAnonKey() || "public-anon-key";
-    cachedClient = createClient(url, anonKey);
+    cachedClient = createClient(url, anonKey, {
+      global: {
+        fetch: (url, options) => fetch(url, { ...options, duplex: "half" } as RequestInit),
+      },
+      realtime: {
+        transport: ws,
+      },
+    });
   }
 
   return cachedClient;

@@ -23,7 +23,7 @@ import {
   normalizeOCRText,
   type ExtractedInBodyMetrics,
 } from "./inbody-parser";
-import { WebSocket } from "ws";
+import ws from "ws";
 
 // ─── Supabase Storage client ──────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL ?? "";
@@ -39,10 +39,10 @@ const storageClient = createClient(
       persistSession: false
     },
     global: {
-      fetch: (url, options) => fetch(url, options),
+        fetch: (url, options) => fetch(url, { ...options, duplex: "half" } as RequestInit),
     },
     realtime: {
-      // transport: WebSocket,
+      transport: ws,
     }
   }
 );
